@@ -1,1 +1,1 @@
-web: fastmcp run financial_analyst_mcp.py --transport http --port $PORT
+web: fastmcp run financial_analyst_mcp.py --transport streamable-http --port $PORT
