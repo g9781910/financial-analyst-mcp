@@ -151,7 +151,7 @@ GET /fx/schema
 
 **API key credits (recommended for MCP):** Pre-purchase USDC credits. Each call debits the cost from your balance. Check balance at `/keys/balance`.
 
-**x402 (USDC on Base):** Per-call stablecoin payment directly over HTTP. No API key needed. Used by autonomous agents via [Agentic.market](https://agentic.market) and [Circle Agent Marketplace](https://agents.circle.com).
+**x402 (USDC on Base):** Per-call stablecoin payment directly over HTTP. No API key needed. Used by autonomous agents via [Agentic.market](https://agentic.market).
 
 ---
 
