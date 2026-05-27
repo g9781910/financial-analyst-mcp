@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.g9781910/financial-analyst-mcp",
+  "description": "Run LBO models, LP/GP waterfalls, and CRE underwriting from any AI agent. Deterministic math, institutional outputs. Pay per call.",
+  "repository": {
+    "url": "https://github.com/g9781910/financial-analyst-mcp",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "packages": [
+    {
+      "registry_name": "pypi",
+      "name": "financial-analyst-mcp",
+      "runtime_hint": "python",
+      "package_arguments": [
+        {
+          "type": "positional",
+          "value": "mcp/financial_analyst_mcp.py",
+          "description": "MCP server entry point within the repository"
+        }
+      ],
+      "environment_variables": [
+        {
+          "name": "FINANCIAL_ANALYST_API_KEY",
+          "description": "Your API key from https://financial-analyst.ai/keys/create. Pre-purchase USDC credits, then pay per call ($0.25–$5.00). Get a free key to evaluate — no commitment required."
+        }
+      ]
+    }
+  ]
+}
