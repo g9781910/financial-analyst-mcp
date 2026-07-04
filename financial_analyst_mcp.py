@@ -35,22 +35,34 @@ VERIFICATION STATUS
     ✓ Monte Carlo  — verified against full MonteCarloRequest schema
     ✓ FX P&L       — verified against full FXPnLRequest schema
     ✓ STR          — verified against STRRequest in router.py (q1-q4 objects, itemized expenses)
+    ✓ DCF          — verified against DCFRequest schema + engine.py (exit multiple / Gordon Growth)
 """
 
 import os
 import httpx
 from fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 BASE_URL = os.getenv("FINANCIAL_ANALYST_BASE_URL", "https://financial-analyst.ai")
 API_KEY  = os.getenv("FINANCIAL_ANALYST_API_KEY", "")
+
+# All 10 tools are stateless, deterministic calculations — no side effects,
+# no external calls beyond the financial-analyst.ai API itself.
+_CALC_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=False,
+)
 
 mcp = FastMCP(
     name="Financial Analyst AI",
     instructions=(
         "Institutional-grade financial analysis tools. Covers LBO modeling, "
         "LP/GP waterfall distributions, multifamily/SFR/STR/fix-and-flip underwriting, "
-        "XIRR on irregular cash flows, amortization schedules, Monte Carlo simulation "
-        "with correlated variables, and FX-adjusted P&L decomposition. "
+        "DCF valuation (exit multiple or Gordon Growth), XIRR on irregular cash flows, "
+        "amortization schedules, Monte Carlo simulation with correlated variables, "
+        "and FX-adjusted P&L decomposition. "
         "All calculations are deterministic, formula-traceable, Excel-convention compliant. "
         "Costs $0.25–$5.00 per call billed against API key credits."
     ),
@@ -78,7 +90,7 @@ async def _post(path: str, payload: dict) -> dict:
 # Required: entry_ebitda, entry_multiple, debt_multiple
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=_CALC_ANNOTATIONS)
 async def lbo_model(
     entry_ebitda: float,
     entry_multiple: float,
@@ -202,7 +214,7 @@ async def lbo_model(
 # gp_contribution defaults to 0.0
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=_CALC_ANNOTATIONS)
 async def waterfall_distribute(
     lp_contribution: float,
     closing_date: str,
@@ -277,7 +289,7 @@ async def waterfall_distribute(
 # Required: address, purchase_price, unit_types
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=_CALC_ANNOTATIONS)
 async def multifamily_underwrite(
     address: str,
     purchase_price: float,
@@ -366,7 +378,7 @@ async def multifamily_underwrite(
 # Uses down_payment_pct (not LTV). monthly_expenses is MONTHLY not annual.
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=_CALC_ANNOTATIONS)
 async def sfr_underwrite(
     address: str,
     purchase_price: float,
@@ -452,7 +464,7 @@ async def sfr_underwrite(
 # Expenses are itemized (10 fields), not a single annual_expenses.
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=_CALC_ANNOTATIONS)
 async def str_underwrite(
     address: str,
     bedrooms: int,
@@ -588,7 +600,7 @@ async def str_underwrite(
 # Required: address, comps, repair_cost
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=_CALC_ANNOTATIONS)
 async def fix_flip_underwrite(
     address: str,
     comps: list[dict],
@@ -666,7 +678,7 @@ async def fix_flip_underwrite(
 # Required: cash_flows (list of CashFlowInput)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=_CALC_ANNOTATIONS)
 async def xirr_compute(cash_flows: list[dict]) -> dict:
     """
     Compute annualized IRR (XIRR) over irregular cash flow periods.
@@ -704,7 +716,7 @@ async def xirr_compute(cash_flows: list[dict]) -> dict:
 # Required: loan_amount, annual_rate, term_months, start_date
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=_CALC_ANNOTATIONS)
 async def amortization_schedule(
     loan_amount: float,
     annual_rate: float,
@@ -755,7 +767,7 @@ async def amortization_schedule(
 # Required: variables, formula
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=_CALC_ANNOTATIONS)
 async def monte_carlo_simulate(
     variables: list[dict],
     formula: str,
@@ -823,7 +835,7 @@ async def monte_carlo_simulate(
 #           sale_price, sale_currency, sale_date, sale_fx_to_usd
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=_CALC_ANNOTATIONS)
 async def fx_pnl(
     purchase_price: float,
     purchase_currency: str,
@@ -885,6 +897,78 @@ async def fx_pnl(
     if costs:
         payload["costs"] = costs
     return await _post("/fx/pnl", payload)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. DCF VALUATION  ✓ verified
+# Required: free_cash_flows, wacc
+# terminal_method: "exit_multiple" (default) or "gordon_growth"
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool(annotations=_CALC_ANNOTATIONS)
+async def dcf_value(
+    free_cash_flows: list[float],
+    wacc: float,
+    company: str | None = None,
+    terminal_method: str = "exit_multiple",
+    terminal_growth_rate: float = 0.025,
+    exit_multiple: float = 10.0,
+    terminal_ebitda: float = 0.0,
+    net_debt: float = 0.0,
+    shares_outstanding: float | None = None,
+) -> dict:
+    """
+    DCF (Discounted Cash Flow) valuation with Exit Multiple or Gordon Growth
+    terminal value. End-of-year cash flow convention.
+
+    Two terminal value methods:
+    - "exit_multiple" (default): terminal EBITDA × EV/EBITDA multiple. Standard
+      in PE and M&A. Requires terminal_ebitda and exit_multiple.
+    - "gordon_growth": FCF_n × (1+g) / (WACC - g). Standard in equity research.
+      Requires terminal_growth_rate; WACC must exceed terminal_growth_rate.
+
+    WHEN TO USE:
+    - Equity research intrinsic value
+    - M&A target valuation
+    - PE portfolio company valuation
+    - Capital budgeting / project NPV
+
+    OUTPUTS: Per-year FCF, discount factor, and PV; terminal value (undiscounted
+    and PV) and its % of enterprise value (sanity check — typically 60-80%);
+    enterprise value, equity value, implied share price; 9×9 sensitivity matrix
+    (EV across WACC ± 200bps vs exit multiple ± 2x or terminal growth ± 100bps).
+
+    COST: $1.00 per call (1 API key credit).
+
+    Args:
+        free_cash_flows: Projected FCF for each forecast year (up to 10 years,
+                         end-of-year convention). Negative values = outflows.
+                         E.g. [45000000, 52000000, 58000000, 65000000, 72000000]
+        wacc: Weighted Average Cost of Capital. E.g. 0.10 for 10%.
+        company: Company or asset name — used in summary statement.
+        terminal_method: "exit_multiple" or "gordon_growth". Default "exit_multiple".
+        terminal_growth_rate: Perpetuity growth rate — gordon_growth only.
+                             Default 2.5%. Must be less than wacc.
+        exit_multiple: EV/EBITDA exit multiple — exit_multiple only. Default 10.0x.
+        terminal_ebitda: EBITDA in terminal year ($) — exit_multiple only,
+                        required (must be > 0) when using that method.
+        net_debt: Total debt minus cash ($). Negative if net cash position.
+        shares_outstanding: Shares outstanding, for implied share price.
+    """
+    payload: dict = {
+        "free_cash_flows": free_cash_flows,
+        "wacc": wacc,
+        "terminal_method": terminal_method,
+        "terminal_growth_rate": terminal_growth_rate,
+        "exit_multiple": exit_multiple,
+        "terminal_ebitda": terminal_ebitda,
+        "net_debt": net_debt,
+    }
+    if company is not None:
+        payload["company"] = company
+    if shares_outstanding is not None:
+        payload["shares_outstanding"] = shares_outstanding
+    return await _post("/dcf/value", payload)
 
 
 if __name__ == "__main__":
