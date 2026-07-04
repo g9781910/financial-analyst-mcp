@@ -19,6 +19,7 @@ Built on [financial-analyst.ai](https://financial-analyst.ai) — a live API wit
 | `multifamily_underwrite` | MF acquisition proforma. GPR → NOI → DSCR → exit. Tracks LTV and CoC annually. | $1.00 |
 | `str_underwrite` | STR/Airbnb underwriting with GO/NO-GO verdict. Quarterly ADR + occupancy, itemized expenses, 10-year projection. | $1.00 |
 | `monte_carlo_simulate` | Monte Carlo with correlated variables (Cholesky). P10/P50/P90. Up to 100,000 trials. | $1.00 |
+| `dcf_value` | DCF valuation — exit multiple or Gordon Growth terminal value. Enterprise value, equity value, implied share price, 9×9 WACC sensitivity matrix. | $1.00 |
 | `sfr_underwrite` | SFR/DSCR rental proforma. Monthly cash flow model. Tracks DSCR and LTV annually. | $0.50 |
 | `fix_flip_underwrite` | Fix & flip. Solves backwards from desired profit to max purchase price. Hard money loan sizing. | $0.50 |
 | `xirr_compute` | XIRR on irregular cash flows. PE distributions, RE waterfalls, project finance. | $0.25 |
@@ -128,6 +129,13 @@ Revenue and cost are correlated 0.4. Formula: revenue - cost.
 50,000 trials. What's P(profit > $400K)?
 ```
 
+**DCF:**
+```
+Value Acme Corp using a DCF. FCF projections: $45M, $52M, $58M, $65M, $72M.
+WACC 10%. Exit at 10x EV/EBITDA on $95M terminal EBITDA.
+Net debt $150M, 25M shares outstanding. What's the implied share price?
+```
+
 ---
 
 ## Schema endpoints
@@ -145,6 +153,7 @@ GET /xirr/schema
 GET /amortization/schema
 GET /monte-carlo/schema
 GET /fx/schema
+GET /dcf/schema
 ```
 
 ---
