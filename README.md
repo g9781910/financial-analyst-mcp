@@ -14,17 +14,17 @@ Built on [financial-analyst.ai](https://financial-analyst.ai) — a live API wit
 
 | Tool | What it does | Cost |
 |------|-------------|------|
-| `lbo_model` | Full LBO from sources & uses through exit. IRR, MOIC, debt schedule, sensitivity tables across exit multiple × leverage. | $5.00 |
-| `waterfall_distribute` | LP/GP waterfall with up to 5 promote tiers (IRR or MOIC hurdles). Penny-accurate via Python Decimal. ACT/365. | $3.00 |
-| `multifamily_underwrite` | MF acquisition proforma. GPR → NOI → DSCR → exit. Tracks LTV and CoC annually. | $1.00 |
-| `str_underwrite` | STR/Airbnb underwriting with GO/NO-GO verdict. Quarterly ADR + occupancy, itemized expenses, 10-year projection. | $1.00 |
-| `monte_carlo_simulate` | Monte Carlo with correlated variables (Cholesky). P10/P50/P90. Up to 100,000 trials. | $1.00 |
-| `dcf_value` | DCF valuation — exit multiple or Gordon Growth terminal value. Enterprise value, equity value, implied share price, 9×9 WACC sensitivity matrix. | $1.00 |
-| `sfr_underwrite` | SFR/DSCR rental proforma. Monthly cash flow model. Tracks DSCR and LTV annually. | $0.50 |
-| `fix_flip_underwrite` | Fix & flip. Solves backwards from desired profit to max purchase price. Hard money loan sizing. | $0.50 |
-| `xirr_compute` | XIRR on irregular cash flows. PE distributions, RE waterfalls, project finance. | $0.25 |
-| `amortization_schedule` | Full amortization schedule. Milestones, IO period support, extra payment scenarios. | $0.25 |
-| `fx_pnl` | FX-adjusted P&L. Decomposes return into asset performance vs currency movement. | $0.25 |
+| `lbo.model` | Full LBO from sources & uses through exit. IRR, MOIC, debt schedule, sensitivity tables across exit multiple × leverage. | $5.00 |
+| `waterfall.distribute` | LP/GP waterfall with up to 5 promote tiers (IRR or MOIC hurdles). Penny-accurate via Python Decimal. ACT/365. | $3.00 |
+| `re.multifamily.underwrite` | MF acquisition proforma. GPR → NOI → DSCR → exit. Tracks LTV and CoC annually. | $1.00 |
+| `re.str.underwrite` | STR/Airbnb underwriting with GO/NO-GO verdict. Quarterly ADR + occupancy, itemized expenses, 10-year projection. | $1.00 |
+| `montecarlo.simulate` | Monte Carlo with correlated variables (Cholesky). P10/P50/P90. Up to 100,000 trials. | $1.00 |
+| `dcf.value` | DCF valuation — exit multiple or Gordon Growth terminal value. Enterprise value, equity value, implied share price, 9×9 WACC sensitivity matrix. | $1.00 |
+| `re.sfr.underwrite` | SFR/DSCR rental proforma. Monthly cash flow model. Tracks DSCR and LTV annually. | $0.50 |
+| `re.fixflip.underwrite` | Fix & flip. Solves backwards from desired profit to max purchase price. Hard money loan sizing. | $0.50 |
+| `xirr.compute` | XIRR on irregular cash flows. PE distributions, RE waterfalls, project finance. | $0.25 |
+| `amortization.schedule` | Full amortization schedule. Milestones, IO period support, extra payment scenarios. | $0.25 |
+| `fx.pnl` | FX-adjusted P&L. Decomposes return into asset performance vs currency movement. | $0.25 |
 
 All calculations are deterministic, formula-traceable, and Excel-convention compliant. No LLM inside the engine.
 

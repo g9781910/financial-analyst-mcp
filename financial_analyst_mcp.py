@@ -90,7 +90,7 @@ async def _post(path: str, payload: dict) -> dict:
 # Required: entry_ebitda, entry_multiple, debt_multiple
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool(annotations=_CALC_ANNOTATIONS)
+@mcp.tool(name="lbo.model", annotations=_CALC_ANNOTATIONS)
 async def lbo_model(
     entry_ebitda: float,
     entry_multiple: float,
@@ -214,7 +214,7 @@ async def lbo_model(
 # gp_contribution defaults to 0.0
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool(annotations=_CALC_ANNOTATIONS)
+@mcp.tool(name="waterfall.distribute", annotations=_CALC_ANNOTATIONS)
 async def waterfall_distribute(
     lp_contribution: float,
     closing_date: str,
@@ -289,7 +289,7 @@ async def waterfall_distribute(
 # Required: address, purchase_price, unit_types
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool(annotations=_CALC_ANNOTATIONS)
+@mcp.tool(name="re.multifamily.underwrite", annotations=_CALC_ANNOTATIONS)
 async def multifamily_underwrite(
     address: str,
     purchase_price: float,
@@ -378,7 +378,7 @@ async def multifamily_underwrite(
 # Uses down_payment_pct (not LTV). monthly_expenses is MONTHLY not annual.
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool(annotations=_CALC_ANNOTATIONS)
+@mcp.tool(name="re.sfr.underwrite", annotations=_CALC_ANNOTATIONS)
 async def sfr_underwrite(
     address: str,
     purchase_price: float,
@@ -464,7 +464,7 @@ async def sfr_underwrite(
 # Expenses are itemized (10 fields), not a single annual_expenses.
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool(annotations=_CALC_ANNOTATIONS)
+@mcp.tool(name="re.str.underwrite", annotations=_CALC_ANNOTATIONS)
 async def str_underwrite(
     address: str,
     bedrooms: int,
@@ -600,7 +600,7 @@ async def str_underwrite(
 # Required: address, comps, repair_cost
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool(annotations=_CALC_ANNOTATIONS)
+@mcp.tool(name="re.fixflip.underwrite", annotations=_CALC_ANNOTATIONS)
 async def fix_flip_underwrite(
     address: str,
     comps: list[dict],
@@ -678,7 +678,7 @@ async def fix_flip_underwrite(
 # Required: cash_flows (list of CashFlowInput)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool(annotations=_CALC_ANNOTATIONS)
+@mcp.tool(name="xirr.compute", annotations=_CALC_ANNOTATIONS)
 async def xirr_compute(cash_flows: list[dict]) -> dict:
     """
     Compute annualized IRR (XIRR) over irregular cash flow periods.
@@ -716,7 +716,7 @@ async def xirr_compute(cash_flows: list[dict]) -> dict:
 # Required: loan_amount, annual_rate, term_months, start_date
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool(annotations=_CALC_ANNOTATIONS)
+@mcp.tool(name="amortization.schedule", annotations=_CALC_ANNOTATIONS)
 async def amortization_schedule(
     loan_amount: float,
     annual_rate: float,
@@ -767,7 +767,7 @@ async def amortization_schedule(
 # Required: variables, formula
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool(annotations=_CALC_ANNOTATIONS)
+@mcp.tool(name="montecarlo.simulate", annotations=_CALC_ANNOTATIONS)
 async def monte_carlo_simulate(
     variables: list[dict],
     formula: str,
@@ -835,7 +835,7 @@ async def monte_carlo_simulate(
 #           sale_price, sale_currency, sale_date, sale_fx_to_usd
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool(annotations=_CALC_ANNOTATIONS)
+@mcp.tool(name="fx.pnl", annotations=_CALC_ANNOTATIONS)
 async def fx_pnl(
     purchase_price: float,
     purchase_currency: str,
@@ -905,7 +905,7 @@ async def fx_pnl(
 # terminal_method: "exit_multiple" (default) or "gordon_growth"
 # ─────────────────────────────────────────────────────────────────────────────
 
-@mcp.tool(annotations=_CALC_ANNOTATIONS)
+@mcp.tool(name="dcf.value", annotations=_CALC_ANNOTATIONS)
 async def dcf_value(
     free_cash_flows: list[float],
     wacc: float,
