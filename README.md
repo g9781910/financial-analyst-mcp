@@ -1,5 +1,7 @@
 # Financial Analyst AI — MCP Server
 
+[![Smithery Badge](https://smithery.ai/badge/g9781910/financial-analyst-mcp)](https://smithery.ai/servers/g9781910/financial-analyst-mcp)
+
 Institutional-grade financial analysis tools for Claude Desktop and any MCP-compatible AI client. Pay per call — no subscriptions, no setup beyond an API key.
 
 Built on [financial-analyst.ai](https://financial-analyst.ai) — a live API with x402 (USDC on Base) and API key credit payment rails.
