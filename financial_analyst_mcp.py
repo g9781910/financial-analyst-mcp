@@ -36,6 +36,7 @@ VERIFICATION STATUS
     ✓ FX P&L       — verified against full FXPnLRequest schema
     ✓ STR          — verified against STRRequest in router.py (q1-q4 objects, itemized expenses)
     ✓ DCF          — verified against DCFRequest schema + engine.py (exit multiple / Gordon Growth)
+    ✓ Debt Sizing  — verified against DebtSizingRequest schema + engine.py (CRE / PE / project finance)
 """
 
 import os
@@ -60,7 +61,8 @@ mcp = FastMCP(
     instructions=(
         "Institutional-grade financial analysis tools. Covers LBO modeling, "
         "LP/GP waterfall distributions, multifamily/SFR/STR/fix-and-flip underwriting, "
-        "DCF valuation (exit multiple or Gordon Growth), XIRR on irregular cash flows, "
+        "DCF valuation (exit multiple or Gordon Growth), debt sizing (CRE, private equity, "
+        "or project finance), XIRR on irregular cash flows, "
         "amortization schedules, Monte Carlo simulation with correlated variables, "
         "and FX-adjusted P&L decomposition. "
         "All calculations are deterministic, formula-traceable, Excel-convention compliant. "
@@ -969,6 +971,96 @@ async def dcf_value(
     if shares_outstanding is not None:
         payload["shares_outstanding"] = shares_outstanding
     return await _post("/dcf/value", payload)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 12. DEBT SIZING  ✓ verified
+# asset_class: "cre", "private_equity", or "project_finance" — each has its
+# own required field subset (see docstring below).
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool(name="debtsizing.size", annotations=_CALC_ANNOTATIONS)
+async def debt_sizing_size(
+    asset_class: str,
+    currency: str = "USD",
+    noi: float | None = None,
+    cap_rate: float | None = None,
+    debt_yield: float | None = None,
+    ebitda: float | None = None,
+    leverage_multiple: float | None = None,
+    min_interest_coverage: float | None = None,
+    construction_cost: float | None = None,
+    min_llcr: float | None = None,
+    debt_term_years: float | None = None,
+    cfads: float | None = None,
+    interest_rate: float | None = None,
+    amortization_months: int | None = None,
+    dscr: float | None = None,
+    ltv: float | None = None,
+) -> dict:
+    """
+    Debt sizing across three asset-class methodologies. Sizes to the binding
+    (minimum) of each class's applicable constraints — runs every leverage/
+    coverage/collateral test and lends to the tightest.
+
+    Set asset_class to "cre", "private_equity", or "project_finance" and
+    supply that class's required fields (others can be omitted).
+
+    CRE — requires: noi, interest_rate, amortization_months, dscr, ltv, cap_rate, debt_yield
+      - DSCR Constraint — annuity-based sizing off target DSCR (Excel PV() convention)
+      - LTV Constraint — (NOI / Cap Rate) x LTV
+      - Debt Yield Constraint — NOI / Debt Yield
+
+    Private Equity — requires: ebitda, cfads, interest_rate, amortization_months,
+    leverage_multiple, min_interest_coverage, dscr
+      - Leverage Constraint — EBITDA x Leverage Multiple
+      - Interest Coverage Constraint — (EBITDA / Min Interest Coverage) / Rate
+      - DSCR Constraint — CFADS-based annuity sizing off minimum DSCR
+
+    Project Finance — requires: construction_cost, cfads, interest_rate,
+    debt_term_years, min_llcr, dscr, ltv
+      - Loan-to-Cost Constraint — Construction Cost x Max LTV
+      - DSCR Constraint — CFADS-based annuity sizing off minimum DSCR
+      - LLCR Constraint — PV of CFADS stream off minimum LLCR
+
+    OUTPUTS: binding constraint and loan amount, all three constraint values,
+    and implied metrics at the sized loan (e.g. implied DSCR/LTV/leverage/LLCR
+    actually achieved at that loan amount).
+
+    COST: $0.25 per call (1 API key credit).
+
+    Args:
+        asset_class: "cre", "private_equity", or "project_finance".
+        currency: "USD" or "GBP" — echoed, not converted. Default "USD".
+        noi: [CRE] Net Operating Income, annual ($).
+        cap_rate: [CRE] Capitalization rate, e.g. 0.06 for 6%.
+        debt_yield: [CRE] Minimum debt yield, e.g. 0.09 for 9%.
+        ebitda: [PE] EBITDA ($).
+        leverage_multiple: [PE] Target leverage multiple, e.g. 4.0.
+        min_interest_coverage: [PE] Minimum interest coverage, e.g. 2.0.
+        construction_cost: [Project Finance] Total construction/project cost ($).
+        min_llcr: [Project Finance] Minimum Loan Life Coverage Ratio, e.g. 1.5.
+        debt_term_years: [Project Finance] Debt term in years.
+        cfads: [PE, Project Finance] Cash Flow Available for Debt Service, annual ($).
+        interest_rate: Annual interest rate, e.g. 0.065. Required for all classes.
+        amortization_months: [CRE, PE] Amortization period in months, e.g. 360.
+        dscr: Target/minimum DSCR, e.g. 1.25. Required for all classes.
+        ltv: [CRE] target LTV, or [Project Finance] max LTV, e.g. 0.70.
+    """
+    payload: dict = {"asset_class": asset_class, "currency": currency}
+    optional_fields = {
+        "noi": noi, "cap_rate": cap_rate, "debt_yield": debt_yield,
+        "ebitda": ebitda, "leverage_multiple": leverage_multiple,
+        "min_interest_coverage": min_interest_coverage,
+        "construction_cost": construction_cost, "min_llcr": min_llcr,
+        "debt_term_years": debt_term_years, "cfads": cfads,
+        "interest_rate": interest_rate, "amortization_months": amortization_months,
+        "dscr": dscr, "ltv": ltv,
+    }
+    for k, v in optional_fields.items():
+        if v is not None:
+            payload[k] = v
+    return await _post("/debt-sizing/size", payload)
 
 
 if __name__ == "__main__":
