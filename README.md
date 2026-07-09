@@ -15,7 +15,7 @@ Built on [financial-analyst.ai](https://financial-analyst.ai) — a live API wit
 | Tool | What it does | Cost |
 |------|-------------|------|
 | `lbo.model` | Full LBO from sources & uses through exit. IRR, MOIC, debt schedule, sensitivity tables across exit multiple × leverage. | $5.00 |
-| `waterfall.distribute` | LP/GP waterfall with up to 5 promote tiers (IRR or MOIC hurdles). Penny-accurate via Python Decimal. ACT/365. | $3.00 |
+| `waterfall.distribute` | LP/GP waterfall, up to 5 promote tiers (IRR or MOIC hurdles), GP pari-passu pref, full or hard catch-up, selectable day count (ACT/365, ACT/360, 30/360, 30E/360, ACT/ACT). Penny-accurate via Python Decimal; reconciled to Excel. | $3.00 |
 | `re.multifamily.underwrite` | MF acquisition proforma. GPR → NOI → DSCR → exit. Tracks LTV and CoC annually. | $1.00 |
 | `re.str.underwrite` | STR/Airbnb underwriting with GO/NO-GO verdict. Quarterly ADR + occupancy, itemized expenses, 10-year projection. | $1.00 |
 | `montecarlo.simulate` | Monte Carlo with correlated variables (Cholesky). P10/P50/P90. Up to 100,000 trials. | $1.00 |
@@ -26,7 +26,7 @@ Built on [financial-analyst.ai](https://financial-analyst.ai) — a live API wit
 | `amortization.schedule` | Full amortization schedule. Milestones, IO period support, extra payment scenarios. | $0.25 |
 | `fx.pnl` | FX-adjusted P&L. Decomposes return into asset performance vs currency movement. | $0.25 |
 
-All calculations are deterministic, formula-traceable, and Excel-convention compliant. No LLM inside the engine.
+All calculations are deterministic, formula-traceable, and Excel-convention compliant — and independently reconciled to Excel, verifiable at `GET /waterfall/reconciliation` on the [API](https://financial-analyst.ai). No LLM inside the engine.
 
 ---
 
@@ -87,7 +87,7 @@ exit at 9x. Revenue growing 7% in year 1 declining to 5%, margins 25-27%.
 **Waterfall:**
 ```
 Calculate the LP/GP waterfall: $9M LP, $1M GP, close Jan 1 2020.
-8% pref, 10% catch-up, IRR hurdles. Tiers: 80/20 to 15%, 75/25 to 18%,
+8% pref, full GP catch-up, IRR hurdles. Tiers: 80/20 to 15%, 75/25 to 18%,
 70/30 for all remaining. Five annual distributions of $2M, $4M, $4M, $5M, $5M.
 ```
 

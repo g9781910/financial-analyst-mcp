@@ -225,18 +225,25 @@ async def waterfall_distribute(
     tiers: list[dict],
     periods: list[dict],
     gp_contribution: float = 0.0,
-    catchup_pct: float = 0.10,
+    day_count: str = "ACT/365",
+    compound: bool = False,
+    catchup: str = "full",
+    attest: bool = False,
 ) -> dict:
     """
-    LP/GP waterfall distribution across multiple periods — penny-accurate.
+    LP/GP waterfall distribution across multiple periods — penny-accurate,
+    reconciled to Excel (verify at GET /waterfall/reconciliation).
 
     Distributes cash in strict order:
     1. Return of capital (pro-rata LP/GP by contribution)
-    2. Preferred return (cumulative, non-compounding, ACT/365 on unreturned LP capital)
-    3. GP catch-up (100% to GP until GP = catchup_pct × LP preferred paid)
+    2. Preferred return (cumulative; LP & GP pari passu on unreturned capital;
+       accrues on the selected day_count; optional annual compounding)
+    3. GP catch-up — "full" (soft pref: GP grossed up to the tier-1 promote on
+       LP preferred, i.e. g1/(1-g1) × LP pref) or "none" (hard pref, no catch-up)
     4. Promote tiers (1–5 tiers with IRR or MOIC hurdles)
 
-    Uses Python Decimal throughout. ACT/365 day count matches Excel.
+    Uses Python Decimal throughout. The IRR hurdle solve and reported IRRs
+    discount ACT/365 to match Excel XNPV/XIRR, regardless of pref day_count.
 
     TIERS STRUCTURE: hurdle_type applies to ALL tiers. Set the last tier's hurdle
     to 99.0 to capture all remaining distributions above the prior tier.
@@ -251,18 +258,20 @@ async def waterfall_distribute(
     - Checking GP catch-up mechanics against fund documents
 
     OUTPUTS: LP/GP summary (contributed, distributed, profit, IRR, MOIC),
-             preferred return detail (accrued, paid, outstanding),
+             preferred return detail (accrued, paid LP/GP, outstanding),
              GP catch-up received, per-tier breakdown with hurdle status,
-             period-by-period waterfall detail.
+             period-by-period waterfall detail. With attest=true, an attestation
+             block binding the result to the engine version and reconciliation pack.
 
     COST: $3.00 per call (3 API key credits).
 
     Args:
-        lp_contribution: Total LP capital contributed ($).
+        lp_contribution: Aggregate LP capital contributed ($). Pari-passu LP
+                         classes are pooled.
         closing_date: Date capital is contributed (YYYY-MM-DD). Used for
                       preferred return day-count accrual.
         preferred_pct: Annual preferred return rate. E.g. 0.08 for 8%.
-                       Cumulative, non-compounding, ACT/365.
+                       Accrues on unreturned capital for LP and GP pari passu.
         hurdle_type: "IRR" or "MOIC" — applies to ALL promote tiers.
         tiers: Promote tiers ordered by hurdle ascending. 1–5 tiers required.
                Each dict: {"hurdle": float, "lp_pct": float, "gp_pct": float}
@@ -271,8 +280,14 @@ async def waterfall_distribute(
         periods: Distribution periods. Each dict:
                  {"period": int, "date": "YYYY-MM-DD", "amount_available": float}
         gp_contribution: GP co-invest ($). Default 0 (no GP co-invest).
-        catchup_pct: GP catch-up as % of LP preferred paid. Default 10%.
-                     E.g. 0.10 = GP receives 10% of LP preferred as catch-up.
+        day_count: Preferred accrual basis — "ACT/365" (default), "ACT/360",
+                   "30/360", "30E/360", or "ACT/ACT". IRR solve stays ACT/365.
+        compound: Annual compounding of unpaid preferred. Default False
+                  (simple/cumulative non-compounding).
+        catchup: "full" (soft pref, GP grossed up to tier-1 promote on LP
+                 preferred) or "none" (hard pref, no catch-up). Default "full".
+        attest: If True, include an attestation block (engine version,
+                reconciliation endpoint, source-workbook SHA). Default False.
     """
     return await _post("/waterfall/distribute", {
         "lp_contribution": lp_contribution,
@@ -280,7 +295,10 @@ async def waterfall_distribute(
         "closing_date": closing_date,
         "preferred_pct": preferred_pct,
         "hurdle_type": hurdle_type,
-        "catchup_pct": catchup_pct,
+        "day_count": day_count,
+        "compound": compound,
+        "catchup": catchup,
+        "attest": attest,
         "tiers": tiers,
         "periods": periods,
     })
