@@ -88,126 +88,163 @@ async def _post(path: str, payload: dict) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. LBO MODEL  ✓ verified
-# Required: entry_ebitda, entry_multiple, debt_multiple
+# 1. LBO MODEL  (3-statement; reconciled to Excel)
+# Required: entry_ebitda, entry_multiple, entry_revenue, revenue_growth, ebitda_margin, da_pct_revenue
 # ─────────────────────────────────────────────────────────────────────────────
 
 @mcp.tool(name="lbo.model", annotations=_CALC_ANNOTATIONS)
 async def lbo_model(
     entry_ebitda: float,
     entry_multiple: float,
-    debt_multiple: float,
-    entry_revenue: float | None = None,
-    revenue_growth_rates: list[float] | None = None,
-    ebitda_margins: list[float] | None = None,
-    capex_pct_revenue: float = 0.03,
-    nwc_pct_revenue: float = 0.10,
-    da_pct_revenue: float = 0.03,
-    tax_rate: float = 0.26,
-    term_loan_rate: float = 0.085,
-    term_loan_amort_pct: float = 0.01,
-    cash_sweep_pct: float = 0.50,
-    revolver_size: float = 0.0,
-    additional_tranches: list[dict] | None = None,
-    transaction_fees: float = 0.02,
-    cash_on_hand: float = 0.0,
-    existing_debt: float = 0.0,
-    management_rollover: float = 0.0,
-    min_cash_balance: float = 0.0,
+    entry_revenue: float,
+    revenue_growth: list[float],
+    ebitda_margin: list[float],
+    da_pct_revenue: list[float],
+    transaction_fees: float = 0.03,
+    ownership: float = 1.0,
     hold_years: int = 5,
-    exit_multiple: float | None = None,
-    exit_multiples: list[float] | None = None,
-    leverage_scenarios: list[float] | None = None,
+    senior_leverage: float = 3.5,
+    total_leverage: float = 4.0,
+    min_dscr: float = 1.2,
+    min_interest_cov: float = 2.0,
+    existing_debt: float = 0.0,
+    excess_cash: float = 0.0,
+    base_rate: float = 0.0364,
+    senior_spread_bps: float = 500,
+    mezz_spread_bps: float = 700,
+    revolver_spread_bps: float = 200,
+    senior_amort_pct: float = 0.05,
+    senior_sweep_pct: float = 0.50,
+    senior_orig_pct: float = 0.005,
+    mezz_amort_pct: float = 0.05,
+    mezz_sweep_pct: float = 0.0,
+    mezz_orig_pct: float = 0.01,
+    mezz_pik: bool = False,
+    revolver_commitment: float = 5.0,
+    revolver_orig_pct: float = 0.01,
+    min_cash_pct: float = 0.02,
+    capex_growth_pct: float = 0.03,
+    wc_pct_revenue: float = 0.02,
+    mgmt_fee_pct: float = 0.0,
+    ebitda_adj_pct: float = 0.0,
+    tax_rate: float = 0.25,
+    exit_multiple: float = 12.0,
+    exit_years: list[int] | None = None,
+    mgmt_incentive_pct: float = 0.05,
+    attest: bool = False,
 ) -> dict:
     """
-    Model a leveraged buyout (LBO) from sources & uses through exit.
+    Model a leveraged buyout (LBO) on a full 3-statement basis, from sources &
+    uses through exit. Reconciled to Excel — see the /lbo/reconciliation attestation.
 
-    Sizes the Term Loan automatically from debt_multiple × entry_ebitda.
-    Only three inputs are required — all others have institutional defaults.
-    Supports multi-tranche capital structures (mezz, seller notes, PIK).
+    Senior debt is sized by the minimum of the leverage, interest-coverage, and
+    fixed-charge-coverage (DSCR) tests; mezzanine plugs senior up to the total
+    leverage multiple. The annual model runs four facilities (senior, mezz, capex,
+    revolver) with scheduled amortisation, cash sweep, origination fees and interest;
+    taxes are levered (on EBIT - interest, with NOL carryforward); un-swept cash
+    accumulates and the exit uses NET debt. Returns are computed for each exit year,
+    and the equity gain is decomposed into value-creation drivers.
+
+    All monetary inputs are in consistent currency units (e.g. GBP or USD millions).
 
     WHEN TO USE:
-    - PE deal screening: size returns on a potential acquisition quickly
-    - Independent sponsor assessment before engaging lenders
-    - DCM debt capacity and leverage sizing for a borrower
-    - Comparing entry multiples, leverage, and hold-period assumptions
+    - PE deal screening and IC-grade returns analysis
+    - Independent sponsor assessment; DCM leverage/debt-capacity sizing
+    - Comparing entry/exit multiples, leverage, and hold-period assumptions
+    - Value-creation attribution for an IC memo (growth vs multiple vs deleveraging)
 
     OUTPUTS:
-    - Sources & uses table (equity check, debt sizing, transaction fees)
-    - Annual operating model: revenue, EBITDA, FCF, debt balance, net leverage
-    - Debt paydown schedule (mandatory amort + cash sweep) by tranche
-    - Base-case IRR and MOIC at exit
-    - Sensitivity tables: IRR and MOIC across exit multiples × leverage scenarios
+    - Sources & uses (senior sized by the binding test, mezz plug, equity check)
+    - Returns for each exit year: IRR, MOIC, equity value
+    - Value-creation attribution: EBITDA growth, multiple expansion, debt paydown,
+      cash generation, transaction costs, management incentive
+    - Full annual model: revenue, EBITDA, EBIT, interest, taxes, debt balances, cash
 
     COST: $5.00 per call (5 API key credits).
 
     Args:
-        entry_ebitda: LTM EBITDA at entry ($). E.g. 50_000_000.
-        entry_multiple: Entry EV/EBITDA multiple. E.g. 8.0.
-        debt_multiple: Senior Term Loan / EBITDA. E.g. 4.0 = 4x leverage.
-        entry_revenue: Entry revenue ($). Inferred from entry_ebitda / ebitda_margins[0]
-                       if omitted.
-        revenue_growth_rates: Per-year revenue growth rates, last value repeats.
-                              E.g. [0.08, 0.07, 0.06, 0.05, 0.05]. Default 5% flat.
-        ebitda_margins: Per-year EBITDA margin, last value repeats.
-                        E.g. [0.25, 0.26, 0.27, 0.27, 0.27]. Default 30% flat.
-        capex_pct_revenue: Maintenance capex as % of revenue. Default 3%.
-        nwc_pct_revenue: Net working capital as % of revenue. Default 10%.
-        da_pct_revenue: D&A as % of revenue (for EBIT/tax calc). Default 3%.
-        tax_rate: Cash tax rate. Default 26%.
-        term_loan_rate: Term Loan annual interest rate. Default 8.5%.
-        term_loan_amort_pct: Annual mandatory amort as % of original TL principal. Default 1%.
-        cash_sweep_pct: % of excess FCF applied to debt paydown after mandatory amort. Default 50%.
-        revolver_size: Revolver commitment undrawn at close ($). Default $0.
-        additional_tranches: Optional extra debt tranches (mezz, second lien, seller notes, PIK).
-                             Each dict: {"name": str, "amount": float, "rate": float,
-                             "amort_pct": float, "is_pik": bool, "maturity_years": int}
-        transaction_fees: M&A and financing fees as % of EV. Default 2%.
-        cash_on_hand: Target's cash at close — reduces equity check ($).
-        existing_debt: Target's existing debt repaid at close — added to uses ($).
-        management_rollover: Management equity rollover as % of total equity. Default 0%.
-        min_cash_balance: Minimum cash to retain on the balance sheet ($).
-        hold_years: Investment hold period in years. Default 5.
-        exit_multiple: Base case exit EV/EBITDA. Defaults to entry_multiple if omitted.
-        exit_multiples: Exit multiples for sensitivity table.
-                        E.g. [7.0, 8.0, 9.0, 10.0, 11.0]
-        leverage_scenarios: Leverage levels for sensitivity table.
-                            E.g. [3.0, 3.5, 4.0, 4.5, 5.0]
+        entry_ebitda: LTM EBITDA at entry (currency units, e.g. 4.7 for GBP 4.7m).
+        entry_multiple: Entry EV/EBITDA multiple, e.g. 11.0.
+        entry_revenue: Revenue at entry (same units as EBITDA).
+        revenue_growth: Revenue growth per year, last value repeats. E.g. [0.15, 0.12, 0.10, 0.08, 0.08].
+        ebitda_margin: EBITDA margin per year, last repeats. E.g. [0.34, 0.35, 0.35, 0.36, 0.36].
+        da_pct_revenue: D&A as % of revenue per year. Maintenance capex is set equal to D&A.
+        transaction_fees: Fees as % of EV, applied at entry and exit. Default 3%.
+        ownership: Sponsor share of equity. Default 1.0.
+        hold_years: Hold period in years. Default 5.
+        senior_leverage: Senior sizing leverage multiple (x EBITDA). Default 3.5.
+        total_leverage: Total leverage multiple (x EBITDA); mezz plugs to this. Default 4.0.
+        min_dscr: Minimum DSCR for the fixed-charge-coverage sizing test. Default 1.2.
+        min_interest_cov: Minimum interest coverage for the sizing test. Default 2.0.
+        existing_debt: Existing debt repaid at close (added to uses). Default 0.
+        excess_cash: Excess cash reducing the equity check. Default 0.
+        base_rate: Base / index rate (e.g. SONIA/SOFR). Default 3.64%.
+        senior_spread_bps: Senior spread over base, bps. Default 500.
+        mezz_spread_bps: Mezzanine spread over base, bps. Default 700.
+        revolver_spread_bps: Revolver spread over base, bps. Default 200.
+        senior_amort_pct: Senior scheduled amort, % of original per year. Default 5%.
+        senior_sweep_pct: Senior cash-sweep % of cash available for debt repayment. Default 50%.
+        senior_orig_pct: Senior origination fee, % (year 1). Default 0.5%.
+        mezz_amort_pct: Mezzanine scheduled amort, % of original per year. Default 5%.
+        mezz_sweep_pct: Mezzanine cash-sweep % (after senior). Default 0%.
+        mezz_orig_pct: Mezzanine origination fee, % (year 1). Default 1%.
+        mezz_pik: If True, mezzanine interest accrues (PIK). Default False.
+        revolver_commitment: Revolver commitment. Default 5.0.
+        revolver_orig_pct: Revolver origination fee, % of commitment. Default 1%.
+        min_cash_pct: Minimum cash floor as % of revenue; revolver draws to hold it. Default 2%.
+        capex_growth_pct: Growth capex as % of revenue. Default 3%.
+        wc_pct_revenue: Working-capital investment as % of revenue. Default 2%.
+        mgmt_fee_pct: Management fee as % of EBITDA. Default 0%.
+        ebitda_adj_pct: EBITDA adjustments as % of EBITDA. Default 0%.
+        tax_rate: Corporate tax rate (levered basis). Default 25%.
+        exit_multiple: EV/EBITDA exit multiple. Default 12.0.
+        exit_years: Exit years to report. Default [2, 3, 4, 5].
+        mgmt_incentive_pct: Management incentive / promote, % of equity upside. Default 5%.
+        attest: If True, include an attestation block binding the result to the
+                engine version and Excel-reconciliation pack.
     """
     payload: dict = {
         "entry_ebitda": entry_ebitda,
         "entry_multiple": entry_multiple,
-        "debt_multiple": debt_multiple,
-        "transaction_fees": transaction_fees,
-        "cash_on_hand": cash_on_hand,
-        "existing_debt": existing_debt,
-        "management_rollover": management_rollover,
-        "term_loan_rate": term_loan_rate,
-        "term_loan_amort_pct": term_loan_amort_pct,
-        "revolver_size": revolver_size,
-        "hold_years": hold_years,
-        "capex_pct_revenue": capex_pct_revenue,
-        "nwc_pct_revenue": nwc_pct_revenue,
-        "tax_rate": tax_rate,
+        "entry_revenue": entry_revenue,
+        "revenue_growth": revenue_growth,
+        "ebitda_margin": ebitda_margin,
         "da_pct_revenue": da_pct_revenue,
-        "cash_sweep_pct": cash_sweep_pct,
-        "min_cash_balance": min_cash_balance,
+        "transaction_fees": transaction_fees,
+        "ownership": ownership,
+        "hold_years": hold_years,
+        "senior_leverage": senior_leverage,
+        "total_leverage": total_leverage,
+        "min_dscr": min_dscr,
+        "min_interest_cov": min_interest_cov,
+        "existing_debt": existing_debt,
+        "excess_cash": excess_cash,
+        "base_rate": base_rate,
+        "senior_spread_bps": senior_spread_bps,
+        "mezz_spread_bps": mezz_spread_bps,
+        "revolver_spread_bps": revolver_spread_bps,
+        "senior_amort_pct": senior_amort_pct,
+        "senior_sweep_pct": senior_sweep_pct,
+        "senior_orig_pct": senior_orig_pct,
+        "mezz_amort_pct": mezz_amort_pct,
+        "mezz_sweep_pct": mezz_sweep_pct,
+        "mezz_orig_pct": mezz_orig_pct,
+        "mezz_pik": mezz_pik,
+        "revolver_commitment": revolver_commitment,
+        "revolver_orig_pct": revolver_orig_pct,
+        "min_cash_pct": min_cash_pct,
+        "capex_growth_pct": capex_growth_pct,
+        "wc_pct_revenue": wc_pct_revenue,
+        "mgmt_fee_pct": mgmt_fee_pct,
+        "ebitda_adj_pct": ebitda_adj_pct,
+        "tax_rate": tax_rate,
+        "exit_multiple": exit_multiple,
+        "mgmt_incentive_pct": mgmt_incentive_pct,
+        "attest": attest,
     }
-    if entry_revenue is not None:
-        payload["entry_revenue"] = entry_revenue
-    if revenue_growth_rates:
-        payload["revenue_growth_rates"] = revenue_growth_rates
-    if ebitda_margins:
-        payload["ebitda_margins"] = ebitda_margins
-    if additional_tranches:
-        payload["additional_tranches"] = additional_tranches
-    if exit_multiple is not None:
-        payload["exit_multiple"] = exit_multiple
-    if exit_multiples:
-        payload["exit_multiples"] = exit_multiples
-    if leverage_scenarios:
-        payload["leverage_scenarios"] = leverage_scenarios
-    return await _post("/lbo/model", payload)
+    if exit_years:
+        payload["exit_years"] = exit_years
+    return await _post("/lbo/analyze", payload)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -225,25 +262,18 @@ async def waterfall_distribute(
     tiers: list[dict],
     periods: list[dict],
     gp_contribution: float = 0.0,
-    day_count: str = "ACT/365",
-    compound: bool = False,
-    catchup: str = "full",
-    attest: bool = False,
+    catchup_pct: float = 0.10,
 ) -> dict:
     """
-    LP/GP waterfall distribution across multiple periods — penny-accurate,
-    reconciled to Excel (verify at GET /waterfall/reconciliation).
+    LP/GP waterfall distribution across multiple periods — penny-accurate.
 
     Distributes cash in strict order:
     1. Return of capital (pro-rata LP/GP by contribution)
-    2. Preferred return (cumulative; LP & GP pari passu on unreturned capital;
-       accrues on the selected day_count; optional annual compounding)
-    3. GP catch-up — "full" (soft pref: GP grossed up to the tier-1 promote on
-       LP preferred, i.e. g1/(1-g1) × LP pref) or "none" (hard pref, no catch-up)
+    2. Preferred return (cumulative, non-compounding, ACT/365 on unreturned LP capital)
+    3. GP catch-up (100% to GP until GP = catchup_pct × LP preferred paid)
     4. Promote tiers (1–5 tiers with IRR or MOIC hurdles)
 
-    Uses Python Decimal throughout. The IRR hurdle solve and reported IRRs
-    discount ACT/365 to match Excel XNPV/XIRR, regardless of pref day_count.
+    Uses Python Decimal throughout. ACT/365 day count matches Excel.
 
     TIERS STRUCTURE: hurdle_type applies to ALL tiers. Set the last tier's hurdle
     to 99.0 to capture all remaining distributions above the prior tier.
@@ -258,20 +288,18 @@ async def waterfall_distribute(
     - Checking GP catch-up mechanics against fund documents
 
     OUTPUTS: LP/GP summary (contributed, distributed, profit, IRR, MOIC),
-             preferred return detail (accrued, paid LP/GP, outstanding),
+             preferred return detail (accrued, paid, outstanding),
              GP catch-up received, per-tier breakdown with hurdle status,
-             period-by-period waterfall detail. With attest=true, an attestation
-             block binding the result to the engine version and reconciliation pack.
+             period-by-period waterfall detail.
 
     COST: $3.00 per call (3 API key credits).
 
     Args:
-        lp_contribution: Aggregate LP capital contributed ($). Pari-passu LP
-                         classes are pooled.
+        lp_contribution: Total LP capital contributed ($).
         closing_date: Date capital is contributed (YYYY-MM-DD). Used for
                       preferred return day-count accrual.
         preferred_pct: Annual preferred return rate. E.g. 0.08 for 8%.
-                       Accrues on unreturned capital for LP and GP pari passu.
+                       Cumulative, non-compounding, ACT/365.
         hurdle_type: "IRR" or "MOIC" — applies to ALL promote tiers.
         tiers: Promote tiers ordered by hurdle ascending. 1–5 tiers required.
                Each dict: {"hurdle": float, "lp_pct": float, "gp_pct": float}
@@ -280,14 +308,8 @@ async def waterfall_distribute(
         periods: Distribution periods. Each dict:
                  {"period": int, "date": "YYYY-MM-DD", "amount_available": float}
         gp_contribution: GP co-invest ($). Default 0 (no GP co-invest).
-        day_count: Preferred accrual basis — "ACT/365" (default), "ACT/360",
-                   "30/360", "30E/360", or "ACT/ACT". IRR solve stays ACT/365.
-        compound: Annual compounding of unpaid preferred. Default False
-                  (simple/cumulative non-compounding).
-        catchup: "full" (soft pref, GP grossed up to tier-1 promote on LP
-                 preferred) or "none" (hard pref, no catch-up). Default "full".
-        attest: If True, include an attestation block (engine version,
-                reconciliation endpoint, source-workbook SHA). Default False.
+        catchup_pct: GP catch-up as % of LP preferred paid. Default 10%.
+                     E.g. 0.10 = GP receives 10% of LP preferred as catch-up.
     """
     return await _post("/waterfall/distribute", {
         "lp_contribution": lp_contribution,
@@ -295,10 +317,7 @@ async def waterfall_distribute(
         "closing_date": closing_date,
         "preferred_pct": preferred_pct,
         "hurdle_type": hurdle_type,
-        "day_count": day_count,
-        "compound": compound,
-        "catchup": catchup,
-        "attest": attest,
+        "catchup_pct": catchup_pct,
         "tiers": tiers,
         "periods": periods,
     })
