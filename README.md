@@ -25,6 +25,12 @@ Built on [financial-analyst.ai](https://financial-analyst.ai) — a live API wit
 | `xirr.compute` | XIRR on irregular cash flows. PE distributions, RE waterfalls, project finance. | $0.25 |
 | `amortization.schedule` | Full amortization schedule. Milestones, IO period support, extra payment scenarios. | $0.25 |
 | `fx.pnl` | FX-adjusted P&L. Decomposes return into asset performance vs currency movement. | $0.25 |
+| `debtsizing.size` | Debt sizing across CRE, private equity, and project finance — min of LTV, DSCR, and (where relevant) LLCR/coverage constraints. | $0.25 |
+| `re.hotel.underwrite` | Hotel acquisition underwriting (stabilized or PIP reposition). Bridge-to-perm, quarterly RevPAR, DSCR/cap-rate sizing, IRR/MOIC. | $1.00 |
+| `re.hotel.develop` | Hotel ground-up development. Construction budget, capitalized interest, developer fee, ADR/occupancy ramp, stabilized exit. | $1.00 |
+| `re.industrial.underwrite` | Industrial/warehouse acquisition with per-tenant rent roll. Staggered leases, TI/LC reserves, NNN OpEx, bridge-to-perm. | $1.00 |
+| `re.industrial.develop` | Industrial ground-up development. Blended-LTC construction loan, s-curve draw, pre-leasing, stabilized exit. | $1.00 |
+| `re.multifamily.develop` | Multifamily ground-up development. Construction loan, lease-up ramp, perm sized on min(LTV, DSCR), stabilized exit. | $1.00 |
 
 All calculations are deterministic, formula-traceable, and Excel-convention compliant — and independently reconciled to Excel, verifiable at `GET /waterfall/reconciliation` on the [API](https://financial-analyst.ai). No LLM inside the engine.
 

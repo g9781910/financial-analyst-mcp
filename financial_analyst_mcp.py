@@ -37,6 +37,11 @@ VERIFICATION STATUS
     ✓ STR          — verified against STRRequest in router.py (q1-q4 objects, itemized expenses)
     ✓ DCF          — verified against DCFRequest schema + engine.py (exit multiple / Gordon Growth)
     ✓ Debt Sizing  — verified against DebtSizingRequest schema + engine.py (CRE / PE / project finance)
+    ✓ Hotel Acq    — verified against HotelAcqRequest (bridge-to-perm, quarterly RevPAR)
+    ✓ Hotel Dev    — verified against HotelDevRequest (ground-up, construction loan, ramp)
+    ✓ Industrial Acq — verified against IndustrialAcqRequest (per-tenant rent roll)
+    ✓ Industrial Dev — verified against IndustrialDevRequest (ground-up, s-curve draw)
+    ✓ MF Dev       — verified against MfDevRequest (ground-up multifamily, lease-up)
 """
 
 import os
@@ -47,7 +52,7 @@ from mcp.types import ToolAnnotations
 BASE_URL = os.getenv("FINANCIAL_ANALYST_BASE_URL", "https://financial-analyst.ai")
 API_KEY  = os.getenv("FINANCIAL_ANALYST_API_KEY", "")
 
-# All 10 tools are stateless, deterministic calculations — no side effects,
+# All 17 tools are stateless, deterministic calculations — no side effects,
 # no external calls beyond the financial-analyst.ai API itself.
 _CALC_ANNOTATIONS = ToolAnnotations(
     readOnlyHint=True,
@@ -61,6 +66,8 @@ mcp = FastMCP(
     instructions=(
         "Institutional-grade financial analysis tools. Covers LBO modeling, "
         "LP/GP waterfall distributions, multifamily/SFR/STR/fix-and-flip underwriting, "
+        "hotel and industrial acquisition and ground-up development underwriting, "
+        "multifamily development underwriting, "
         "DCF valuation (exit multiple or Gordon Growth), debt sizing (CRE, private equity, "
         "or project finance), XIRR on irregular cash flows, "
         "amortization schedules, Monte Carlo simulation with correlated variables, "
@@ -1098,6 +1105,589 @@ async def debt_sizing_size(
         if v is not None:
             payload[k] = v
     return await _post("/debt-sizing/size", payload)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 13. HOTEL ACQUISITION UNDERWRITING  ✓ verified against HotelAcqRequest
+# Required: start_date, purchase_price
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool(name="re.hotel.underwrite", annotations=_CALC_ANNOTATIONS)
+async def hotel_acquisition_underwrite(
+    start_date: str,
+    purchase_price: float,
+    hold_years: float = 5.0,
+    cl_term_months: int = 1,
+    num_keys: int = 100,
+    closing_costs_pct: float = 0.02,
+    pip_budget: float = 0.0,
+    pip_spend_months: int = 12,
+    soft_costs: float = 0.0,
+    q1_occupancy: float = 0.55,
+    q2_occupancy: float = 0.69,
+    q3_occupancy: float = 0.85,
+    q4_occupancy: float = 0.59,
+    q1_adr: float = 195.0,
+    q2_adr: float = 260.0,
+    q3_adr: float = 450.0,
+    q4_adr: float = 310.0,
+    revenue_escalator_pct: float = 0.03,
+    other_revenue_pct: float = 0.20,
+    opex_pct: float = 0.35,
+    cl_advance_rate: float = 0.65,
+    cl_rate: float = 0.085,
+    cl_origination_pct: float = 0.005,
+    stabilized_cap_rate: float = 0.075,
+    perm_ltv: float = 0.60,
+    perm_dscr_min: float = 1.25,
+    perm_rate: float = 0.075,
+    perm_term_years: int = 25,
+    perm_io_months: int = 0,
+    perm_origination_pct: float = 0.005,
+    exit_cap_rate: float = 0.075,
+    exit_costs_pct: float = 0.03,
+    pip_draw_overrides: list[float] | None = None,
+) -> dict:
+    """
+    Hotel acquisition underwriting — stabilized or light value-add / PIP repositioning.
+
+    Bridge-to-perm structure: acquisition + optional PIP funded by a construction/bridge
+    loan, refinanced into a permanent loan sized on stabilized NOI at month cl_term_months.
+    RevPAR built from quarterly ADR × occupancy, plus other operated revenue and USALI OpEx.
+
+    WHEN TO USE:
+    - Underwriting a hotel acquisition (full- or select-service)
+    - Modeling a PIP / brand-conversion reposition with a bridge loan
+    - Sizing perm debt off a stabilized cap rate with a DSCR floor
+    - Screening on DSCR / cap rate / IRR / MOIC
+
+    OUTPUTS: Annual projection (RevPAR, NOI margin, DSCR, cap rate), bridge and perm
+             financing, exit value and net proceeds, IRR and MOIC on equity.
+
+    COST: $1.00 per call (1 API key credit).
+
+    Args:
+        start_date: Acquisition closing date, "YYYY-MM-DD".
+        purchase_price: Acquisition price ($).
+        hold_years: Hold period from acquisition. Default 5.
+        cl_term_months: Bridge loan term in months (controls CL payoff / perm sizing).
+                        Typically pip_spend_months + 1. Default 1.
+        num_keys: Number of rooms. Default 100.
+        closing_costs_pct: Acquisition closing costs as % of price. Default 2%.
+        pip_budget: Property Improvement Plan total budget ($). Default 0.
+        pip_spend_months: PIP drawn straight-line over this many months. Default 12.
+        soft_costs: Soft costs ($). Default 0.
+        q1_occupancy..q4_occupancy: Quarterly occupancy %. Defaults 0.55/0.69/0.85/0.59.
+        q1_adr..q4_adr: Quarterly ADR ($/night). Defaults 195/260/450/310.
+        revenue_escalator_pct: Annual ADR / revenue escalator. Default 3%.
+        other_revenue_pct: Other operated revenue as % of net rooms revenue
+                           (F&B, parking, spa, fees). Default 20%.
+        opex_pct: OpEx as % of total revenue (all USALI departments). NOI = revenue × (1 − opex_pct).
+                  Default 35%.
+        cl_advance_rate: LTC on (price + closing + PIP) for the bridge loan. Default 65%.
+        cl_rate: Bridge loan annual rate. Default 8.5%.
+        cl_origination_pct: Bridge origination fee %. Default 0.5%.
+        stabilized_cap_rate: Lender going-in cap rate for perm sizing. Default 7.5%.
+        perm_ltv: Max permanent LTV. Default 60%.
+        perm_dscr_min: Min DSCR for perm sizing. Default 1.25.
+        perm_rate: Permanent loan annual rate. Default 7.5%.
+        perm_term_years: Permanent amortization term. Default 25.
+        perm_io_months: Interest-only months on the perm loan. Default 0.
+        perm_origination_pct: Perm origination fee %. Default 0.5%.
+        exit_cap_rate: Exit cap rate. Default 7.5%.
+        exit_costs_pct: Sale transaction costs as % of exit value. Default 3%.
+        pip_draw_overrides: Optional monthly PIP draw amounts (length = pip_spend_months).
+                            Overrides straight-line.
+    """
+    payload = {
+        "start_date": start_date, "purchase_price": purchase_price,
+        "hold_years": hold_years, "cl_term_months": cl_term_months, "num_keys": num_keys,
+        "closing_costs_pct": closing_costs_pct, "pip_budget": pip_budget,
+        "pip_spend_months": pip_spend_months, "soft_costs": soft_costs,
+        "q1_occupancy": q1_occupancy, "q2_occupancy": q2_occupancy,
+        "q3_occupancy": q3_occupancy, "q4_occupancy": q4_occupancy,
+        "q1_adr": q1_adr, "q2_adr": q2_adr, "q3_adr": q3_adr, "q4_adr": q4_adr,
+        "revenue_escalator_pct": revenue_escalator_pct,
+        "other_revenue_pct": other_revenue_pct, "opex_pct": opex_pct,
+        "cl_advance_rate": cl_advance_rate, "cl_rate": cl_rate,
+        "cl_origination_pct": cl_origination_pct,
+        "stabilized_cap_rate": stabilized_cap_rate, "perm_ltv": perm_ltv,
+        "perm_dscr_min": perm_dscr_min, "perm_rate": perm_rate,
+        "perm_term_years": perm_term_years, "perm_io_months": perm_io_months,
+        "perm_origination_pct": perm_origination_pct,
+        "exit_cap_rate": exit_cap_rate, "exit_costs_pct": exit_costs_pct,
+    }
+    if pip_draw_overrides is not None:
+        payload["pip_draw_overrides"] = pip_draw_overrides
+    return await _post("/hotel-acq/underwrite", payload)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 14. HOTEL DEVELOPMENT UNDERWRITING  ✓ verified against HotelDevRequest
+# Required: start_date, land_cost, hard_and_preopening_costs, soft_costs
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool(name="re.hotel.develop", annotations=_CALC_ANNOTATIONS)
+async def hotel_development_underwrite(
+    start_date: str,
+    land_cost: float,
+    hard_and_preopening_costs: float,
+    soft_costs: float,
+    construction_months: int = 18,
+    hold_years: float = 5.0,
+    cl_term_months: int = 19,
+    num_keys: int = 100,
+    hard_cost_contingency_pct: float = 0.05,
+    soft_cost_contingency_pct: float = 0.05,
+    developer_fee_pct: float = 0.02,
+    q1_occupancy: float = 0.58,
+    q2_occupancy: float = 0.72,
+    q3_occupancy: float = 0.88,
+    q4_occupancy: float = 0.62,
+    q1_adr: float = 295.0,
+    q2_adr: float = 360.0,
+    q3_adr: float = 550.0,
+    q4_adr: float = 410.0,
+    revenue_escalator_pct: float = 0.03,
+    other_revenue_pct: float = 0.38,
+    opex_pct: float = 0.35,
+    cl_advance_rate: float = 0.65,
+    cl_rate: float = 0.085,
+    cl_origination_pct: float = 0.005,
+    stabilized_cap_rate: float = 0.075,
+    perm_ltv: float = 0.65,
+    perm_dscr_min: float = 1.25,
+    perm_rate: float = 0.065,
+    perm_term_years: int = 25,
+    perm_io_months: int = 0,
+    perm_origination_pct: float = 0.005,
+    exit_cap_rate: float = 0.075,
+    exit_costs_pct: float = 0.03,
+    hard_cost_draw_pcts: list[float] | None = None,
+) -> dict:
+    """
+    Hotel ground-up development underwriting.
+
+    Full construction budget (land, hard + pre-opening, contingencies, capitalized
+    interest, developer fee) funded by a construction loan, refinanced into a permanent
+    loan at month cl_term_months. Quarterly ADR × occupancy ramp with a stabilized exit.
+
+    WHEN TO USE:
+    - Underwriting ground-up hotel development
+    - Sizing a construction loan on blended LTC and capitalized interest
+    - Testing yield-on-cost vs exit cap rate spread
+    - Screening development returns (IRR / MOIC) with a stabilization ramp
+
+    OUTPUTS: Development budget, construction/perm financing, quarterly ramp,
+             stabilized RevPAR / NOI margin / yield-on-cost / DSCR, exit, IRR and MOIC.
+
+    COST: $1.00 per call (1 API key credit).
+
+    Args:
+        start_date: Project start date, "YYYY-MM-DD".
+        land_cost: Land cost ($).
+        hard_and_preopening_costs: All hard costs incl. building, FF&E, kitchen/F&B
+                                   equipment, pre-opening/OS&E ($). Contingency applied
+                                   separately via hard_cost_contingency_pct.
+        soft_costs: Soft costs ($) — architecture, design, permits, etc.
+        construction_months: Construction period in months. Default 18.
+        hold_years: Hold period. Default 5.
+        cl_term_months: CL term (controls payoff, dev-fee payment, perm sizing).
+                        Typically construction_months + 1. Default 19.
+        num_keys: Number of rooms. Default 100.
+        hard_cost_contingency_pct: Contingency as % of hard_and_preopening_costs. Default 5%.
+        soft_cost_contingency_pct: Contingency as % of soft_costs. Default 5%.
+        developer_fee_pct: Developer fee as % of (land + total hard + total soft). Default 2%.
+        q1_occupancy..q4_occupancy: Quarterly occupancy %. Defaults 0.58/0.72/0.88/0.62.
+        q1_adr..q4_adr: Quarterly ADR ($/night). Defaults 295/360/550/410.
+        revenue_escalator_pct: Annual ADR / revenue escalator from first operating year. Default 3%.
+        other_revenue_pct: Other operated revenue as % of net rooms revenue. Default 38%.
+        opex_pct: OpEx as % of total revenue (all USALI departments). Default 35%.
+        cl_advance_rate: Blended construction-loan LTC. Default 65%.
+        cl_rate: Construction loan annual rate. Default 8.5%.
+        cl_origination_pct: Construction origination fee %. Default 0.5%.
+        stabilized_cap_rate: Lender going-in cap rate for perm sizing. Default 7.5%.
+        perm_ltv: Max permanent LTV. Default 65%.
+        perm_dscr_min: Min DSCR for perm sizing. Default 1.25.
+        perm_rate: Permanent loan annual rate. Default 6.5%.
+        perm_term_years: Permanent amortization term. Default 25.
+        perm_io_months: Interest-only months on the perm loan. Default 0.
+        perm_origination_pct: Perm origination fee %. Default 0.5%.
+        exit_cap_rate: Exit cap rate. Default 7.5%.
+        exit_costs_pct: Sale transaction costs as % of exit value. Default 3%.
+        hard_cost_draw_pcts: Optional monthly hard-cost draw amounts (length =
+                             construction_months). Overrides NORMDIST S-curve; pass exact
+                             Excel values for reconciliation.
+    """
+    payload = {
+        "start_date": start_date, "land_cost": land_cost,
+        "hard_and_preopening_costs": hard_and_preopening_costs, "soft_costs": soft_costs,
+        "construction_months": construction_months, "hold_years": hold_years,
+        "cl_term_months": cl_term_months, "num_keys": num_keys,
+        "hard_cost_contingency_pct": hard_cost_contingency_pct,
+        "soft_cost_contingency_pct": soft_cost_contingency_pct,
+        "developer_fee_pct": developer_fee_pct,
+        "q1_occupancy": q1_occupancy, "q2_occupancy": q2_occupancy,
+        "q3_occupancy": q3_occupancy, "q4_occupancy": q4_occupancy,
+        "q1_adr": q1_adr, "q2_adr": q2_adr, "q3_adr": q3_adr, "q4_adr": q4_adr,
+        "revenue_escalator_pct": revenue_escalator_pct,
+        "other_revenue_pct": other_revenue_pct, "opex_pct": opex_pct,
+        "cl_advance_rate": cl_advance_rate, "cl_rate": cl_rate,
+        "cl_origination_pct": cl_origination_pct,
+        "stabilized_cap_rate": stabilized_cap_rate, "perm_ltv": perm_ltv,
+        "perm_dscr_min": perm_dscr_min, "perm_rate": perm_rate,
+        "perm_term_years": perm_term_years, "perm_io_months": perm_io_months,
+        "perm_origination_pct": perm_origination_pct,
+        "exit_cap_rate": exit_cap_rate, "exit_costs_pct": exit_costs_pct,
+    }
+    if hard_cost_draw_pcts is not None:
+        payload["hard_cost_draw_pcts"] = hard_cost_draw_pcts
+    return await _post("/hotel-dev/underwrite", payload)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 15. INDUSTRIAL ACQUISITION UNDERWRITING  ✓ verified against IndustrialAcqRequest
+# Required: start_date, hold_years, total_sf, purchase_price, tenants,
+#           opex_per_sf_yr, stabilized_cap_rate, perm_rate, exit_cap_rate
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool(name="re.industrial.underwrite", annotations=_CALC_ANNOTATIONS)
+async def industrial_acquisition_underwrite(
+    start_date: str,
+    hold_years: float,
+    total_sf: float,
+    purchase_price: float,
+    tenants: list[dict],
+    opex_per_sf_yr: float,
+    stabilized_cap_rate: float,
+    perm_rate: float,
+    exit_cap_rate: float,
+    closing_costs_pct: float = 0.02,
+    capex_budget: float = 0.0,
+    capex_spend_months: int = 12,
+    soft_costs: float = 0.0,
+    other_income_annual: float = 0.0,
+    vacancy_credit_loss_pct: float = 0.05,
+    opex_growth_pct: float = 0.03,
+    mgmt_fee_pct: float = 0.03,
+    ti_per_sf: float = 7.0,
+    lc_pct_of_lease_value: float = 0.04,
+    cl_advance_rate: float = 0.65,
+    cl_rate: float = 0.085,
+    cl_origination_pct: float = 0.005,
+    cl_term_months: int = 13,
+    perm_ltv: float = 0.65,
+    perm_dscr_min: float = 1.25,
+    perm_term_years: int = 30,
+    perm_io_months: int = 0,
+    perm_origination_pct: float = 0.005,
+    exit_costs_pct: float = 0.03,
+    capex_draw_overrides: list[float] | None = None,
+) -> dict:
+    """
+    Industrial / warehouse acquisition underwriting with a per-tenant rent roll.
+
+    Bridge-to-perm structure: acquisition + optional capex funded by a bridge/construction
+    loan, refinanced into a permanent loan sized on stabilized NOI at month cl_term_months.
+    Tracks lease-level rent, escalators, TI/LC rollover reserves and NNN OpEx.
+
+    WHEN TO USE:
+    - Underwriting a stabilized or light value-add industrial acquisition
+    - Modeling staggered lease commencements / rollover
+    - Sizing perm debt off a stabilized cap rate with a DSCR floor
+    - Screening on DSCR / cap rate / IRR / MOIC and $/SF metrics
+
+    OUTPUTS: Annual proforma (NOI, DSCR, cap rate), per-tenant rent roll, bridge/perm
+             financing, exit value and net proceeds, IRR and MOIC, $/SF metrics.
+
+    COST: $1.00 per call (1 API key credit).
+
+    Args:
+        start_date: Acquisition / closing date, "YYYY-MM-DD".
+        hold_years: Hold period from acquisition (1–15).
+        total_sf: Net rentable square feet.
+        purchase_price: Acquisition price ($).
+        tenants: Rent roll — list of dicts, each:
+                 {"label": str, "rentable_sf": float, "rent_per_sf_yr": float,
+                  "lease_start_month": int, "term_months": int, "escalator_pct": float}.
+                 lease_start_month=1 for tenants in place at acquisition.
+        opex_per_sf_yr: All-in OpEx $/SF/yr in year 1 (excl. management fee).
+        stabilized_cap_rate: Lender going-in cap rate for perm sizing.
+        perm_rate: Permanent loan annual rate.
+        exit_cap_rate: Exit cap rate.
+        closing_costs_pct: Acquisition closing costs %. Default 2%.
+        capex_budget: Planned improvement budget ($). Default 0.
+        capex_spend_months: Months over which capex is drawn straight-line. Default 12.
+        soft_costs: Soft costs ($). Default 0.
+        other_income_annual: Ancillary annual income ($). Default 0.
+        vacancy_credit_loss_pct: Vacancy + credit loss as % of GPR. Default 5%.
+        opex_growth_pct: Annual OpEx growth (calendar-year step-up). Default 3%.
+        mgmt_fee_pct: Management fee as % of revenue. Default 3%.
+        ti_per_sf: Tenant improvement allowance on rollover ($/SF). Default 7.
+        lc_pct_of_lease_value: Leasing commission as % of new lease value. Default 4%.
+        cl_advance_rate: LTV on (price + capex) for the bridge loan. Default 65%.
+        cl_rate: Bridge loan annual rate. Default 8.5%.
+        cl_origination_pct: Bridge origination fee %. Default 0.5%.
+        cl_term_months: Bridge term in months; perm closes at end of this month. Default 13.
+        perm_ltv: Max permanent LTV. Default 65%.
+        perm_dscr_min: Min DSCR for perm sizing. Default 1.25.
+        perm_term_years: Permanent amortization term. Default 30.
+        perm_io_months: Interest-only months on the perm loan. Default 0.
+        perm_origination_pct: Perm origination fee %. Default 0.5%.
+        exit_costs_pct: Sale transaction costs as % of exit value. Default 3%.
+        capex_draw_overrides: Optional monthly capex draw amounts ($) (length =
+                              capex_spend_months). Overrides straight-line.
+    """
+    payload = {
+        "start_date": start_date, "hold_years": hold_years, "total_sf": total_sf,
+        "purchase_price": purchase_price, "tenants": tenants,
+        "opex_per_sf_yr": opex_per_sf_yr, "stabilized_cap_rate": stabilized_cap_rate,
+        "perm_rate": perm_rate, "exit_cap_rate": exit_cap_rate,
+        "closing_costs_pct": closing_costs_pct, "capex_budget": capex_budget,
+        "capex_spend_months": capex_spend_months, "soft_costs": soft_costs,
+        "other_income_annual": other_income_annual,
+        "vacancy_credit_loss_pct": vacancy_credit_loss_pct,
+        "opex_growth_pct": opex_growth_pct, "mgmt_fee_pct": mgmt_fee_pct,
+        "ti_per_sf": ti_per_sf, "lc_pct_of_lease_value": lc_pct_of_lease_value,
+        "cl_advance_rate": cl_advance_rate, "cl_rate": cl_rate,
+        "cl_origination_pct": cl_origination_pct, "cl_term_months": cl_term_months,
+        "perm_ltv": perm_ltv, "perm_dscr_min": perm_dscr_min,
+        "perm_term_years": perm_term_years, "perm_io_months": perm_io_months,
+        "perm_origination_pct": perm_origination_pct, "exit_costs_pct": exit_costs_pct,
+    }
+    if capex_draw_overrides is not None:
+        payload["capex_draw_overrides"] = capex_draw_overrides
+    return await _post("/industrial-acq/underwrite", payload)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 16. INDUSTRIAL DEVELOPMENT UNDERWRITING  ✓ verified against IndustrialDevRequest
+# Required: start_date, construction_months, hold_years, total_sf, land_cost,
+#           hard_costs, soft_costs, tenants, opex_per_sf_yr, stabilized_cap_rate,
+#           perm_rate, exit_cap_rate
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool(name="re.industrial.develop", annotations=_CALC_ANNOTATIONS)
+async def industrial_development_underwrite(
+    start_date: str,
+    construction_months: int,
+    hold_years: float,
+    total_sf: float,
+    land_cost: float,
+    hard_costs: float,
+    soft_costs: float,
+    tenants: list[dict],
+    opex_per_sf_yr: float,
+    stabilized_cap_rate: float,
+    perm_rate: float,
+    exit_cap_rate: float,
+    stabilization_months: int = 6,
+    developer_fee_pct: float = 0.02,
+    construction_fee_pct: float = 0.0,
+    draw_schedule: str = "s_curve",
+    other_income_annual: float = 0.0,
+    vacancy_credit_loss_pct: float = 0.05,
+    opex_growth_pct: float = 0.03,
+    mgmt_fee_pct: float = 0.03,
+    ti_per_sf: float = 7.0,
+    lc_pct_of_lease_value: float = 0.04,
+    cl_advance_rate: float = 0.65,
+    cl_rate: float = 0.085,
+    cl_origination_pct: float = 0.005,
+    cl_term_months: int = 36,
+    perm_ltv: float = 0.65,
+    perm_dscr_min: float = 1.25,
+    perm_term_years: int = 30,
+    perm_io_months: int = 0,
+    perm_origination_pct: float = 0.005,
+    exit_costs_pct: float = 0.03,
+    hard_cost_draw_pcts: list[float] | None = None,
+) -> dict:
+    """
+    Industrial / warehouse ground-up development underwriting with a per-tenant rent roll.
+
+    Construction loan on blended LTC (land + hard + soft + dev fee + capitalized interest),
+    refinanced into a permanent loan at month cl_term_months. Lease-up from first occupancy
+    with TI/LC reserves, NNN OpEx, and a stabilized exit.
+
+    WHEN TO USE:
+    - Underwriting ground-up industrial/logistics development
+    - Sizing a construction loan on blended LTC and an s-curve draw
+    - Modeling pre-leasing with staggered commencements
+    - Testing yield-on-cost vs exit cap spread; screening IRR / MOIC
+
+    OUTPUTS: Development budget, construction/perm financing, lease-up proforma,
+             stabilized NOI / yield-on-cost / DSCR, exit, IRR and MOIC, $/SF metrics.
+
+    COST: $1.00 per call (1 API key credit).
+
+    Args:
+        start_date: Project start date "YYYY-MM-DD" (land close / construction begin).
+        construction_months: Construction period in months (6–60).
+        hold_years: Hold from first occupancy (construction_months + 1), in years.
+        total_sf: Net rentable square feet.
+        land_cost: Land cost ($).
+        hard_costs: Total hard construction costs ($).
+        soft_costs: Total soft costs ($) — drawn evenly months 1-3.
+        tenants: Rent roll — list of dicts, each:
+                 {"label": str, "rentable_sf": float, "rent_per_sf_yr": float,
+                  "lease_start_month": int, "term_months": int, "escalator_pct": float}.
+                 lease_start_month is from project start.
+        opex_per_sf_yr: All-in OpEx $/SF/yr in year 1 (excl. management fee).
+        stabilized_cap_rate: Going-in cap rate for perm loan sizing.
+        perm_rate: Permanent loan annual rate.
+        exit_cap_rate: Exit cap rate — sale = LTM NOI / exit_cap_rate.
+        stabilization_months: Lease-up period; sets developer-fee payment month. Default 6.
+        developer_fee_pct: Developer fee as % of (land + hard + soft). Default 2%.
+        construction_fee_pct: GC/CM fee as % of hard costs, if separate. Default 0.
+        draw_schedule: "s_curve" or "straight_line". Default "s_curve".
+        other_income_annual: Ancillary annual income ($). Default 0.
+        vacancy_credit_loss_pct: Vacancy + credit loss as % of GPR. Default 5%.
+        opex_growth_pct: Annual OpEx growth (calendar-year step-up). Default 3%.
+        mgmt_fee_pct: Management fee as % of net rental revenue. Default 3%.
+        ti_per_sf: Tenant improvement allowance on rollover ($/SF). Default 7.
+        lc_pct_of_lease_value: Leasing commission as % of new lease value. Default 4%.
+        cl_advance_rate: Blended construction-loan LTC. Default 65%.
+        cl_rate: Construction loan annual rate. Default 8.5%.
+        cl_origination_pct: Construction origination fee %. Default 0.5%.
+        cl_term_months: CL term; perm closes at end of this month. Set to
+                        first_occupancy_month + stabilization_months. Default 36.
+        perm_ltv: Max permanent LTV. Default 65%.
+        perm_dscr_min: Min DSCR for perm sizing. Default 1.25.
+        perm_term_years: Permanent amortization term. Default 30.
+        perm_io_months: Interest-only months on the perm loan. Default 0.
+        perm_origination_pct: Perm origination fee %. Default 0.5%.
+        exit_costs_pct: Sale transaction costs as % of exit value. Default 3%.
+        hard_cost_draw_pcts: Optional monthly hard-cost draw % (length =
+                             construction_months). Overrides draw_schedule; normalized to 100%.
+    """
+    payload = {
+        "start_date": start_date, "construction_months": construction_months,
+        "hold_years": hold_years, "total_sf": total_sf, "land_cost": land_cost,
+        "hard_costs": hard_costs, "soft_costs": soft_costs, "tenants": tenants,
+        "opex_per_sf_yr": opex_per_sf_yr, "stabilized_cap_rate": stabilized_cap_rate,
+        "perm_rate": perm_rate, "exit_cap_rate": exit_cap_rate,
+        "stabilization_months": stabilization_months,
+        "developer_fee_pct": developer_fee_pct, "construction_fee_pct": construction_fee_pct,
+        "draw_schedule": draw_schedule, "other_income_annual": other_income_annual,
+        "vacancy_credit_loss_pct": vacancy_credit_loss_pct,
+        "opex_growth_pct": opex_growth_pct, "mgmt_fee_pct": mgmt_fee_pct,
+        "ti_per_sf": ti_per_sf, "lc_pct_of_lease_value": lc_pct_of_lease_value,
+        "cl_advance_rate": cl_advance_rate, "cl_rate": cl_rate,
+        "cl_origination_pct": cl_origination_pct, "cl_term_months": cl_term_months,
+        "perm_ltv": perm_ltv, "perm_dscr_min": perm_dscr_min,
+        "perm_term_years": perm_term_years, "perm_io_months": perm_io_months,
+        "perm_origination_pct": perm_origination_pct, "exit_costs_pct": exit_costs_pct,
+    }
+    if hard_cost_draw_pcts is not None:
+        payload["hard_cost_draw_pcts"] = hard_cost_draw_pcts
+    return await _post("/industrial-dev/underwrite", payload)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 17. MULTIFAMILY DEVELOPMENT UNDERWRITING  ✓ verified against MfDevRequest
+# Required: start_date, construction_months, stabilization_months, hold_years,
+#           units, land_cost, hard_costs, soft_costs, construction_ltc,
+#           construction_rate, stabilized_cap_rate, perm_rate, exit_cap_rate
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mcp.tool(name="re.multifamily.develop", annotations=_CALC_ANNOTATIONS)
+async def multifamily_development_underwrite(
+    start_date: str,
+    construction_months: int,
+    stabilization_months: int,
+    hold_years: float,
+    units: list[dict],
+    land_cost: float,
+    hard_costs: float,
+    soft_costs: float,
+    construction_ltc: float,
+    construction_rate: float,
+    stabilized_cap_rate: float,
+    perm_rate: float,
+    exit_cap_rate: float,
+    rent_growth_pct: float = 0.03,
+    stabilized_vacancy_pct: float = 0.05,
+    other_income_pct: float = 0.04,
+    opex_pct: float = 0.38,
+    developer_fee: float = 0.0,
+    construction_origination_pct: float = 0.005,
+    draw_schedule: str = "s_curve",
+    perm_ltv: float = 0.65,
+    perm_dscr_min: float = 1.25,
+    perm_term_years: int = 30,
+    perm_origination_pct: float = 0.005,
+    exit_costs_pct: float = 0.03,
+    hard_cost_draw_pcts: list[float] | None = None,
+) -> dict:
+    """
+    Multifamily ground-up development underwriting.
+
+    Construction loan on blended LTC (land + hard + soft + capitalized interest),
+    refinanced into a permanent loan sized as min(LTV, DSCR) on stabilized NOI /
+    stabilized_cap_rate. Lease-up from C/O with a stabilized exit.
+
+    WHEN TO USE:
+    - Underwriting ground-up multifamily development
+    - Sizing a construction loan on blended LTC and an s-curve draw
+    - Testing yield-on-cost vs exit cap spread
+    - Screening development IRR / MOIC with a lease-up ramp
+
+    OUTPUTS: Development budget, construction/perm financing, lease-up proforma,
+             stabilized NOI / yield-on-cost / DSCR, exit value and net proceeds,
+             IRR and MOIC, per-unit metrics.
+
+    COST: $1.00 per call (1 API key credit).
+
+    Args:
+        start_date: Project start date "YYYY-MM-DD" (land purchase / month 1).
+        construction_months: Construction period in months (6–60).
+        stabilization_months: Lease-up / stabilization period in months (1–24).
+        hold_years: Hold from stabilization, in years.
+        units: Unit mix — list of dicts, each:
+               {"type": str, "count": int, "monthly_rent": float}.
+        land_cost: Land cost ($) — paid month 1, in blended LTC basis.
+        hard_costs: Total hard construction costs ($).
+        soft_costs: Total soft costs ($) — drawn equally months 1-3.
+        construction_ltc: Blended LTC on all-in monthly uses (e.g. 0.65).
+        construction_rate: Construction loan annual rate.
+        stabilized_cap_rate: Going-in cap rate for perm value sizing.
+        perm_rate: Permanent loan annual rate.
+        exit_cap_rate: Exit cap rate — sale = trailing-12-month NOI / exit_cap_rate.
+        rent_growth_pct: Annual rent growth. Default 3%.
+        stabilized_vacancy_pct: Stabilized vacancy rate. Default 5%.
+        other_income_pct: Other income as % of net rental revenue. Default 4%.
+        opex_pct: OpEx as % of GPR (applied to GPR, not EGI). Default 38%.
+        developer_fee: Developer fee ($) — drawn in CL, paid at C/O. Default 0.
+        construction_origination_pct: Construction origination fee %. Default 0.5%.
+        draw_schedule: "s_curve" or "straight_line". Default "s_curve".
+        perm_ltv: Max perm LTV. Default 65%.
+        perm_dscr_min: Min DSCR for perm sizing. Default 1.25.
+        perm_term_years: Permanent amortization term. Default 30.
+        perm_origination_pct: Perm origination fee %. Default 0.5%.
+        exit_costs_pct: Sale transaction costs as % of gross sale price. Default 3%.
+        hard_cost_draw_pcts: Optional monthly hard-cost draw % (length =
+                             construction_months). Overrides draw_schedule; normalized to 100%.
+    """
+    payload = {
+        "start_date": start_date, "construction_months": construction_months,
+        "stabilization_months": stabilization_months, "hold_years": hold_years,
+        "units": units, "land_cost": land_cost, "hard_costs": hard_costs,
+        "soft_costs": soft_costs, "construction_ltc": construction_ltc,
+        "construction_rate": construction_rate, "stabilized_cap_rate": stabilized_cap_rate,
+        "perm_rate": perm_rate, "exit_cap_rate": exit_cap_rate,
+        "rent_growth_pct": rent_growth_pct,
+        "stabilized_vacancy_pct": stabilized_vacancy_pct,
+        "other_income_pct": other_income_pct, "opex_pct": opex_pct,
+        "developer_fee": developer_fee,
+        "construction_origination_pct": construction_origination_pct,
+        "draw_schedule": draw_schedule, "perm_ltv": perm_ltv,
+        "perm_dscr_min": perm_dscr_min, "perm_term_years": perm_term_years,
+        "perm_origination_pct": perm_origination_pct, "exit_costs_pct": exit_costs_pct,
+    }
+    if hard_cost_draw_pcts is not None:
+        payload["hard_cost_draw_pcts"] = hard_cost_draw_pcts
+    return await _post("/mf-dev/underwrite", payload)
 
 
 if __name__ == "__main__":
