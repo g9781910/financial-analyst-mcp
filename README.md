@@ -16,12 +16,12 @@ Built on [financial-analyst.ai](https://financial-analyst.ai) — a live API wit
 |------|-------------|------|
 | `lbo.model` | Full LBO from sources & uses through exit. IRR, MOIC, debt schedule, sensitivity tables across exit multiple × leverage. | $5.00 |
 | `waterfall.distribute` | LP/GP waterfall, up to 5 promote tiers (IRR or MOIC hurdles), GP pari-passu pref, full or hard catch-up, selectable day count (ACT/365, ACT/360, 30/360, 30E/360, ACT/ACT). Penny-accurate via Python Decimal; reconciled to Excel. | $3.00 |
-| `re.multifamily.underwrite` | MF acquisition proforma. GPR → NOI → DSCR → exit. Tracks LTV and CoC annually. | $1.00 |
-| `re.str.underwrite` | STR/Airbnb underwriting with GO/NO-GO verdict. Quarterly ADR + occupancy, itemized expenses, 10-year projection. | $1.00 |
+| `re.multifamily.underwrite` | Multifamily acquisition proforma — unit mix, stub acquisition month, monthly NOI, trailing-NOI exit. Unlevered + levered project returns (IRR via XIRR). Excel-reconciled, SHA-pinned. | $1.00 |
+| `re.str.underwrite` | STR/Airbnb underwriting — quarterly ADR + occupancy (whole-night revenue), itemized opex, monthly proforma. Unlevered + levered returns (IRR via XIRR). Excel-reconciled, SHA-pinned. | $1.00 |
 | `montecarlo.simulate` | Monte Carlo with correlated variables (Cholesky). P10/P50/P90. Up to 100,000 trials. | $1.00 |
 | `dcf.value` | DCF valuation — exit multiple or Gordon Growth terminal value. Enterprise value, equity value, implied share price, 9×9 WACC sensitivity matrix. | $1.00 |
-| `re.sfr.underwrite` | SFR/DSCR rental proforma. Monthly cash flow model. Tracks DSCR and LTV annually. | $0.50 |
-| `re.fixflip.underwrite` | Fix & flip. Solves backwards from desired profit to max purchase price. Hard money loan sizing. | $0.50 |
+| `re.sfr.underwrite` | SFR rental proforma — monthly cash flow, loan-to-cost financing, optional interest-only, appreciation-floored exit. Unlevered + levered returns (IRR via XIRR). Excel-reconciled, SHA-pinned. | $0.50 |
+| `re.fixflip.underwrite` | Fix & flip — backward-solves max purchase price from a profit target; sizes the hard-money loan (min of LTC/ARV caps) and reports the binding constraint. IRR via XIRR. Excel-reconciled, SHA-pinned. | $0.50 |
 | `xirr.compute` | XIRR on irregular cash flows. PE distributions, RE waterfalls, project finance. | $0.25 |
 | `amortization.schedule` | Full amortization schedule. Milestones, IO period support, extra payment scenarios. | $0.25 |
 | `fx.pnl` | FX-adjusted P&L. Decomposes return into asset performance vs currency movement. | $0.25 |
@@ -106,16 +106,16 @@ Underwrite a 32-unit Charlotte multifamily at $4.2M: 8 studios at $1,200,
 
 **STR:**
 ```
-Underwrite a 3BR/2BA Folly Beach vacation rental at $650K.
+Underwrite a Folly Beach vacation rental at $650K.
 Q1: $220 ADR, 58% occupancy. Q2: $290, 72%. Q3: $380, 88%. Q4: $240, 62%.
 Insurance $3,200/yr, property tax $5,800/yr, utilities $3,600/yr.
-25% down, 7.25% rate.
+75% loan-to-cost at 7.25%.
 ```
 
 **SFR:**
 ```
 Underwrite 142 Oak St Greenville SC at $285K: $2,600/month rent,
-$850/month expenses, 30% down, 7% rate, 7-year hold, 6% exit cap.
+$850/month expenses, 70% loan-to-cost at 7% rate, 7-year hold, 6.5% exit cap.
 ```
 
 **XIRR:**
