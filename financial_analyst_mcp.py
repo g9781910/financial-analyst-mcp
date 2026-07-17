@@ -1177,8 +1177,14 @@ async def hotel_acquisition_underwrite(
         pip_budget: Property Improvement Plan total budget ($). Default 0.
         pip_spend_months: PIP drawn straight-line over this many months. Default 12.
         soft_costs: Soft costs ($). Default 0.
-        q1_occupancy..q4_occupancy: Quarterly occupancy %. Defaults 0.55/0.69/0.85/0.59.
-        q1_adr..q4_adr: Quarterly ADR ($/night). Defaults 195/260/450/310.
+        q1_occupancy: Q1 (Jan-Mar) occupancy rate (0-1). Default 0.55.
+        q2_occupancy: Q2 (Apr-Jun) occupancy rate (0-1). Default 0.69.
+        q3_occupancy: Q3 (Jul-Sep) occupancy rate (0-1). Default 0.85.
+        q4_occupancy: Q4 (Oct-Dec) occupancy rate (0-1). Default 0.59.
+        q1_adr: Q1 (Jan-Mar) average daily rate ($/night). Default 195.
+        q2_adr: Q2 (Apr-Jun) average daily rate ($/night). Default 260.
+        q3_adr: Q3 (Jul-Sep) average daily rate ($/night). Default 450.
+        q4_adr: Q4 (Oct-Dec) average daily rate ($/night). Default 310.
         revenue_escalator_pct: Annual ADR / revenue escalator. Default 3%.
         other_revenue_pct: Other operated revenue as % of net rooms revenue
                            (F&B, parking, spa, fees). Default 20%.
@@ -1298,8 +1304,14 @@ async def hotel_development_underwrite(
         hard_cost_contingency_pct: Contingency as % of hard_and_preopening_costs. Default 5%.
         soft_cost_contingency_pct: Contingency as % of soft_costs. Default 5%.
         developer_fee_pct: Developer fee as % of (land + total hard + total soft). Default 2%.
-        q1_occupancy..q4_occupancy: Quarterly occupancy %. Defaults 0.58/0.72/0.88/0.62.
-        q1_adr..q4_adr: Quarterly ADR ($/night). Defaults 295/360/550/410.
+        q1_occupancy: Q1 (Jan-Mar) occupancy rate (0-1). Default 0.58.
+        q2_occupancy: Q2 (Apr-Jun) occupancy rate (0-1). Default 0.72.
+        q3_occupancy: Q3 (Jul-Sep) occupancy rate (0-1). Default 0.88.
+        q4_occupancy: Q4 (Oct-Dec) occupancy rate (0-1). Default 0.62.
+        q1_adr: Q1 (Jan-Mar) average daily rate ($/night). Default 295.
+        q2_adr: Q2 (Apr-Jun) average daily rate ($/night). Default 360.
+        q3_adr: Q3 (Jul-Sep) average daily rate ($/night). Default 550.
+        q4_adr: Q4 (Oct-Dec) average daily rate ($/night). Default 410.
         revenue_escalator_pct: Annual ADR / revenue escalator from first operating year. Default 3%.
         other_revenue_pct: Other operated revenue as % of net rooms revenue. Default 38%.
         opex_pct: OpEx as % of total revenue (all USALI departments). Default 35%.
