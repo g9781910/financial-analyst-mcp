@@ -26,13 +26,13 @@ Built on [financial-analyst.ai](https://financial-analyst.ai) — a live API wit
 | `amortization.schedule` | Full amortization schedule. Milestones, IO period support, extra payment scenarios. | $0.25 |
 | `fx.pnl` | FX-adjusted P&L. Decomposes return into asset performance vs currency movement. | $0.25 |
 | `debtsizing.size` | Debt sizing across CRE, private equity, and project finance — min of LTV, DSCR, and (where relevant) LLCR/coverage constraints. | $0.25 |
-| `re.hotel.underwrite` | Hotel acquisition underwriting (stabilized or PIP reposition). Bridge-to-perm, quarterly RevPAR, DSCR/cap-rate sizing, IRR/MOIC. | $1.00 |
-| `re.hotel.develop` | Hotel ground-up development. Construction budget, capitalized interest, developer fee, ADR/occupancy ramp, stabilized exit. | $1.00 |
-| `re.industrial.underwrite` | Industrial/warehouse acquisition with per-tenant rent roll. Staggered leases, TI/LC reserves, NNN OpEx, bridge-to-perm. | $1.00 |
-| `re.industrial.develop` | Industrial ground-up development. Blended-LTC construction loan, s-curve draw, pre-leasing, stabilized exit. | $1.00 |
-| `re.multifamily.develop` | Multifamily ground-up development. Construction loan, lease-up ramp, perm sized on min(LTV, DSCR), stabilized exit. | $1.00 |
+| `re.hotel.underwrite` | Hotel acquisition underwriting (stabilized or PIP reposition). Bridge-to-perm, quarterly RevPAR, DSCR/cap-rate sizing, IRR/MOIC. | $2.00 |
+| `re.hotel.develop` | Hotel ground-up development. Construction budget, capitalized interest, developer fee, ADR/occupancy ramp, stabilized exit. | $2.00 |
+| `re.industrial.underwrite` | Industrial/warehouse acquisition with per-tenant rent roll. Staggered leases, TI/LC reserves, NNN OpEx, bridge-to-perm. | $2.00 |
+| `re.industrial.develop` | Industrial ground-up development. Blended-LTC construction loan, s-curve draw, pre-leasing, stabilized exit. | $2.00 |
+| `re.multifamily.develop` | Multifamily ground-up development. Construction loan, lease-up ramp, perm sized on min(LTV, DSCR), stabilized exit. | $2.00 |
 
-All calculations are deterministic, formula-traceable, and Excel-convention compliant — and independently reconciled to Excel, verifiable at `GET /waterfall/reconciliation` on the [API](https://financial-analyst.ai). No LLM inside the engine.
+All calculations are deterministic, formula-traceable, and Excel-convention compliant. No LLM inside the engine. The deterministic engines are independently reconciled to a SHA-pinned Excel model — **served, not just asserted** — see [Reconciliation & attestation](#reconciliation--attestation).
 
 ---
 
@@ -152,6 +152,11 @@ Every tool has a companion schema endpoint for agent auto-configuration:
 GET /lbo/schema
 GET /waterfall/schema
 GET /mf-acq/schema
+GET /mf-dev/schema
+GET /hotel-acq/schema
+GET /hotel-dev/schema
+GET /industrial-acq/schema
+GET /industrial-dev/schema
 GET /str/schema
 GET /sfr/schema
 GET /fix-flip/schema
@@ -160,7 +165,34 @@ GET /amortization/schema
 GET /monte-carlo/schema
 GET /fx/schema
 GET /dcf/schema
+GET /debt-sizing/schema
 ```
+
+---
+
+## Reconciliation & attestation
+
+Engine outputs are reconciled to an independent, SHA-pinned Excel model, and the
+proof is **served, not just asserted** — query it, or have an agent verify it
+before trusting a number.
+
+```
+GET /reconciliation             Cross-engine index: per-engine passed / failed / pending
+GET /{engine}/reconciliation    Per-engine attestation: cases, conventions, tolerances,
+                                source-workbook SHA-256, last-checked
+```
+
+Expecteds are sourced from Excel (the oracle), never from the engine. `passed`
+means the engine matches the workbook to the stated tolerance; `pending` is an
+honest coverage gap, not a silent pass. Each real-estate acquisition and
+development pack covers multiple binding-constraint branches (LTV, DSCR,
+purchase-price LTV) and financing paths (refi surplus and shortfall), so a base
+case can't mask a convention bug. Monte Carlo is stochastic and excluded by
+design; industrial reconciliation is in progress.
+
+Add `"attest": true` to a supporting request to bind the result to the proof set —
+a consuming agent can follow the pointer to confirm the engine is passing and see
+exactly which conventions were applied.
 
 ---
 
