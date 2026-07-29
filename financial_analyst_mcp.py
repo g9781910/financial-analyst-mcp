@@ -251,7 +251,7 @@ async def lbo_model(
     }
     if exit_years:
         payload["exit_years"] = exit_years
-    return await _post("/lbo/analyze", payload)
+    return await _post("/lbo/model", payload)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

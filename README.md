@@ -188,7 +188,7 @@ honest coverage gap, not a silent pass. Each real-estate acquisition and
 development pack covers multiple binding-constraint branches (LTV, DSCR,
 purchase-price LTV) and financing paths (refi surplus and shortfall), so a base
 case can't mask a convention bug. Monte Carlo is stochastic and excluded by
-design; industrial reconciliation is in progress.
+design.
 
 Add `"attest": true` to a supporting request to bind the result to the proof set —
 a consuming agent can follow the pointer to confirm the engine is passing and see
