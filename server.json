@@ -22,7 +22,7 @@
       "environment_variables": [
         {
           "name": "FINANCIAL_ANALYST_API_KEY",
-          "description": "Your API key from https://financial-analyst.ai/keys/create. Pre-purchase USDC credits, then pay per call ($0.25–$5.00). Get a free key to evaluate — no commitment required."
+          "description": "Your API key. Create one at https://financial-analyst.ai/#getstarted, or POST https://financial-analyst.ai/keys/create with JSON body {\"wallet_address\": \"0x...\"} (your Base wallet, required). Pre-purchase USDC credits, then pay per call ($0.25–$5.00). Get a free key to evaluate — no commitment required."
         }
       ]
     }
