@@ -7,7 +7,8 @@ Requires:
     pip install fastmcp httpx
 
 Configuration (environment variables):
-    FINANCIAL_ANALYST_API_KEY   Your API key from /keys/create
+    FINANCIAL_ANALYST_API_KEY   Your API key from POST /keys/create
+                                (JSON body: {"wallet_address": "0x..."}, your Base wallet, required)
     FINANCIAL_ANALYST_BASE_URL  Optional override (default: https://financial-analyst.ai)
 
 Usage (stdio — Claude Desktop):
@@ -82,7 +83,8 @@ def _headers() -> dict:
     if not API_KEY:
         raise ValueError(
             "FINANCIAL_ANALYST_API_KEY not set. "
-            "Get a key at https://financial-analyst.ai/keys/create"
+            "Get a key at https://financial-analyst.ai/#getstarted "
+            "(or POST /keys/create with your Base wallet_address)"
         )
     return {"x-api-key": API_KEY, "Content-Type": "application/json"}
 

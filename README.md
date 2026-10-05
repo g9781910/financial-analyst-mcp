@@ -40,7 +40,17 @@ All calculations are deterministic, formula-traceable, and Excel-convention comp
 
 ### 1. Get an API key
 
-Go to [financial-analyst.ai/keys/create](https://financial-analyst.ai/keys/create) and create a free key. Top up with USDC credits via the dashboard.
+Create a free key at [financial-analyst.ai](https://financial-analyst.ai/#getstarted) by entering your wallet address on Base, then top up with USDC on the same page.
+
+Or call the API directly. `wallet_address` is required (`0x` + 40 hex characters, any letter case); `label` is optional:
+
+```bash
+curl -X POST https://financial-analyst.ai/keys/create \
+  -H "Content-Type: application/json" \
+  -d '{"wallet_address": "0x1234567890abcdef1234567890ABCDEF12345678", "label": "my-agent"}'
+```
+
+The response contains your `api_key`. A request without a valid `wallet_address` returns `422` and creates no key.
 
 ### 2. Clone the repo
 
